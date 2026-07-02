@@ -1,0 +1,80 @@
+name: eInk Dashboard Server
+version: "1.0.0"
+slug: eink_dashboard
+description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
+url: https://github.com/ItsDedSec00/e-ink
+# 2026: nur aarch64 + amd64 (resvg-Prebuilts existieren nur dafuer; armv7/i386 raus)
+arch:
+  - aarch64
+  - amd64
+
+# s6-overlay-Base bringt /init selbst mit -> Dockers eigene Init deaktivieren.
+init: false
+startup: application
+boot: auto
+
+# --- Netzwerk: TCP 8080 im LAN fuer den ESP32 exponieren ---
+# Direkter Port (kein Ingress) - ein headless ESP32 kann die HA-Auth des
+# Ingress nicht durchlaufen. Host-Port frei waehlbar; Container lauscht 8080.
+ports:
+  "8080/tcp": 8080
+ports_description:
+  "8080/tcp": "eInk-Endpunkt: ESP32 zieht http://<ha-ip>:8080/eink.bin (bzw. /eink.png)"
+
+# --- Persistenz ---
+# /data ist immer vorhanden & persistent (ueberlebt Neustart+Update, im Backup).
+# Reminder-Cache, pyicloud-Session/Trust liegen dort. addon_config nur, falls
+# man Cache-/Session-Dateien zusaetzlich im HA-Dateisystem sehen will.
+map:
+  - addon_config:rw
+
+# --- Health-Monitoring: HA prueft den offenen TCP-Port ---
+watchdog: "tcp://[HOST]:[PORT:8080]"
+
+panel_icon: mdi:image-frame
+
+# --- Optionen (Defaults) ---
+# Nur unkritische Defaults hier; alle Secrets bleiben leer (Nutzer fuellt sie
+# im Configuration-Tab, dort als Passwortfelder maskiert).
+options:
+  eink_tz: Europe/Berlin
+  eink_cache_ttl: 300
+  eink_weather_city: München
+  eink_windows_open: false
+  icloud_calendars: ""
+  reminder_refresh_min: 5
+
+# --- Schema (Validierung) ---
+# Suffix ? = optional ohne Default. Secrets = password? -> maskiert in der UI.
+# EINK_PORT bewusst NICHT im Schema (fix 8080, via ports gemappt).
+schema:
+  # Service
+  eink_key: "password?"
+  eink_cache_ttl: "int(1,86400)?"
+  eink_tz: "str?"
+  eink_windows_open: "bool?"
+  # Wetter (Open-Meteo, kein Key)
+  eink_weather_city: "str?"
+  eink_lat: "float?"
+  eink_lon: "float?"
+  # KPI-/Kosten-APIs
+  app1_api_key: "password?"
+  app1_api_url: "url?"
+  app2_api_key: "password?"
+  app2_api_url: "url?"
+  app_primary_match: "str?"
+  app_secondary_match: "str?"
+  stripe_secret_key: "password?"
+  venice_admin_key: "password?"
+  fal_admin_key: "password?"
+  openrouter_admin_key: "password?"
+  # iCloud-Kalender (CalDAV, app-spezifisches Passwort) + oeffentliche Feeds
+  icloud_user: "email?"
+  icloud_app_pw: "password?"
+  icloud_calendars: "str?"
+  ical_urls: "str?"
+  # iCloud-Reminders (pyicloud-Bridge; braucht das echte Apple-ID-Passwort)
+  icloud_apple_id: "email?"
+  icloud_apple_password: "password?"
+  icloud_reminder_lists: "str?"
+  reminder_refresh_min: "int(1,1440)?"

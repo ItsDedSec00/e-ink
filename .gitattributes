@@ -1,0 +1,7 @@
+# s6-Skripte MUESSEN LF-Zeilenenden behalten - mit CRLF startet der Service
+# nicht (execlineb/bash im Container versteht \r nicht). Ohne diese Regel wandelt
+# git unter Windows sie evtl. auf CRLF um.
+addon/rootfs/etc/services.d/** text eol=lf
+addon/rootfs/etc/cont-init.d/**  text eol=lf
+addon/rootfs/usr/lib/reminders-bridge/*.py text eol=lf
+*.sh text eol=lf

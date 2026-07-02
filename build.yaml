@@ -1,0 +1,22 @@
+# Setzt pro Architektur das passende HA-Debian-Base, das der Dockerfile-
+# Ausdruck `FROM ${BUILD_FROM}` konsumiert. Das ist der zuverlaessigste,
+# dokumentierte Weg fuer Multi-Arch mit EINEM Dockerfile.
+#
+# Hinweis (Recherche R1): Ab Supervisor 2026.04 gilt build.yaml als deprecated
+# und BUILD_FROM wird nicht mehr auto-injiziert. Deshalb hat der Dockerfile
+# zusaetzlich `ARG BUILD_FROM=<amd64-default>`. Auf aelteren Supervisorn
+# (und beim offiziellen HA-Builder) sorgt diese build.yaml weiterhin fuer das
+# korrekte Base pro Arch; auf 2026.04+ schadet sie nicht (der Default-ARG
+# greift, falls sie ignoriert wird).
+#
+# glibc/gnu-Base gewaehlt (nicht Alpine/musl): resvg-Prebuilts sind auf gnu am
+# robustesten, kein Rust-from-source-Fallback unter QEMU-Emulation.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base-debian:bookworm-2026.06.1
+  amd64: ghcr.io/home-assistant/amd64-base-debian:bookworm-2026.06.1
+
+# Reproduzierbare Build-Args (tauchen als Labels im Image auf).
+args: {}
+
+labels:
+  org.opencontainers.image.source: "https://github.com/ItsDedSec00/e-ink"

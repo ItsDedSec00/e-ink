@@ -1,0 +1,9 @@
+#!/usr/bin/execlineb -S1
+# Exit-Handler des eInk-Service. Wenn der Node-Prozess stirbt, bringt dieser
+# Handler den kompletten Container herunter (statt nur den Service-Tree),
+# damit der HA-Supervisor/Watchdog das Add-on sauber neu startet.
+#
+# $1 = exit code des run-Skripts. 0 und 256 (vom s6-Signal) gelten als "sauber".
+if { s6-test ${1} -ne 0 }
+if { s6-test ${1} -ne 256 }
+s6-svscanctl -t /var/run/s6/services

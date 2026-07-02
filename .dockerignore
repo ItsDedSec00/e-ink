@@ -1,0 +1,36 @@
+# Build-Context sauber halten. Der Renderer braucht nur src/, fonts/ und die
+# npm-Manifeste; alles andere gehoert nicht ins Image.
+
+# Node deps werden im Container via `npm ci` frisch installiert (arch-korrekte
+# resvg-Prebuilts). Den (Windows-)node_modules NIE hineinkopieren.
+node_modules/
+
+# Firmware (ESP32/PlatformIO) - riesig, irrelevant fuers Server-Image.
+firmware/
+
+# Secrets & lokale Env - kommen zur Laufzeit aus den Add-on-Optionen.
+.env
+.env.*
+!.env.example
+
+# Render-Ausgaben / Vorschauen / lokale Caches.
+*.png
+.reminders-cache.json
+.reminders-cache*.json
+
+# Editor/Tooling/VCS.
+.git/
+.gitignore
+.claude/
+*.ps1
+*.log
+fw_check.txt
+
+# Doku/Meta muss nicht ins Image.
+*.md
+DOCS.md
+README.md
+
+# Das Add-on-Overlay wird gezielt via `COPY addon/rootfs /` gezogen; den
+# restlichen addon/-Kram (config.yaml etc.) nicht als App-Layer mitschleppen.
+# (config.yaml/build.yaml/Dockerfile werden vom Supervisor separat gelesen.)

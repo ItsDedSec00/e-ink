@@ -1,0 +1,144 @@
+# eInk Dashboard Server
+
+Rendert das 800x480-Dashboard (Kalender, Wetter, KPIs, Apple-Erinnerungen) und
+liefert es an den batteriebetriebenen ESP32-eInk-Rahmen im LAN. Der Node-Renderer
+aus `src/` laeuft dabei **unveraendert** im Container; dieses Add-on paketiert ihn
+nur, mappt die Optionen auf die erwarteten ENV-Variablen und portiert die
+Apple-Reminder-Bridge von Windows (Credential Manager) auf Linux (ENV + `/data`).
+
+## Endpunkte (Port 8080)
+
+| Pfad | Zweck |
+|---|---|
+| `GET /eink.bin` | Gepackter 4-Farb-Puffer (96000 B) - der ESP32 streamt ihn direkt ins Panel |
+| `GET /eink.png` (`/eink`, `/`) | 800x480 PNG (Vorschau im Browser) |
+| `GET /healthz` | Health-Check (der Add-on-Watchdog nutzt den TCP-Port) |
+| `POST /button/<n>` | Platzhalter fuer Tastendruck (HA-Aktion noch nicht verdrahtet) |
+
+Optionaler Schutz: Ist `eink_key` gesetzt, muss der Client `?key=<eink_key>`
+anhaengen (`.../eink.bin?key=...`). Akkustand meldet der ESP32 via `?bat=87`.
+
+---
+
+## Installation (Home Assistant OS)
+
+### 1. Add-on-Ordner auf den HA-Host bringen
+
+Das lokale Add-on muss unter `/addons/<slug>/` auf dem HA-Host liegen. Zugang via
+**Samba share** oder **Advanced SSH & Web Terminal** (nur dieses zeigt das echte
+Host-`/addons`; das offizielle "Terminal & SSH" nicht).
+
+Lege den **kompletten Repo-Inhalt** (dieses Verzeichnis) nach
+`/addons/eink-dashboard/` (Samba: `\\<ha-ip>\addons\eink-dashboard\`). Der
+Supervisor baut das Image aus dem Repo-Root (`Dockerfile` + `config.yaml` liegen
+dort; Build-Context = Repo-Root, damit `src/` und `fonts/` mit ins Image kommen).
+
+> Wichtig: `package-lock.json` muss mitkopiert werden (liegt im Repo). `npm ci`
+> braucht es, und es enthaelt bereits alle vier Linux-resvg-Prebuilts. `node_modules/`
+> **nicht** kopieren - `.dockerignore` schliesst es aus, npm installiert im
+> Container die arch-korrekten Binaries frisch.
+
+### 2. Store neu laden & installieren
+
+Settings -> Add-ons -> **Add-on Store** -> oben rechts drei Punkte -> **Check for
+updates** (oder Seite neu laden). Das Add-on erscheint unter **Local add-ons**.
+Oeffnen -> **Install** (der erste Build dauert einige Minuten, v. a. unter
+aarch64-Emulation).
+
+### 3. Konfigurieren
+
+Tab **Configuration**. Alles ist optional - ohne Keys laufen die betroffenen
+Kacheln mit Mock-Daten. Sinnvolles Minimum:
+
+```yaml
+eink_tz: Europe/Berlin
+eink_weather_city: München
+# Live-KPIs brauchen BEIDES (stripe + App-1-Admin-API):
+stripe_secret_key: sk_live_...
+app1_api_key: ...
+# iCloud-Kalender (CalDAV, app-spezifisches Passwort von appleid.apple.com):
+icloud_user: du@icloud.com
+icloud_app_pw: xxxx-xxxx-xxxx-xxxx
+icloud_calendars: "Familie,Privat"
+# Apple-Erinnerungen (pyicloud, ECHTES Apple-ID-Passwort - siehe 2FA unten):
+icloud_apple_id: du@icloud.com
+icloud_apple_password: dein-apple-id-passwort
+icloud_reminder_lists: "Einkaufen,Haushalt"
+```
+
+Danach **Start**. Logs im Tab **Log** (Live-stdout des Node-Servers), oder CLI:
+`ha addons logs local_eink_dashboard`.
+
+### 4. ESP32 umbiegen
+
+Der ESP32 zieht das Bild jetzt vom HA-Host statt vom Windows-PC. In der Firmware
+die URL anpassen:
+
+```cpp
+// vorher: dein Windows-PC im LAN
+// #define IMG_URL "http://192.168.x.PC:8080/eink.bin"
+#define IMG_URL "http://<ha-host-ip>:8080/eink.bin"
+// optional mit Shared Secret:
+// #define IMG_URL "http://<ha-host-ip>:8080/eink.bin?key=<eink_key>"
+```
+
+Host-IP = die IP deiner HA-Instanz. Port 8080 wird per `ports:` vom Container auf
+den Host gemappt.
+
+---
+
+## Einmaliges iCloud-2FA-Setup (nur fuer Apple-Erinnerungen)
+
+CalDAV-Kalender (`icloud_user`/`icloud_app_pw`) und oeffentliche iCal-Feeds laufen
+sofort. Die **Erinnerungen** gehen ueber pyicloud und brauchen beim ersten Mal
+einen interaktiven 6-stelligen 2FA-Code (Apple pusht ihn auf deine Geraete). Der
+Render-Pfad ist headless und kann das nicht - deshalb einmalig manuell:
+
+1. Optionen `icloud_apple_id` + `icloud_apple_password` setzen, Add-on **starten**.
+   Im Log erscheint `needs_reauth` (erwartet - noch kein Trust in `/data`).
+2. In die laufende Add-on-Shell (via SSH-Add-on / Portainer / `docker exec`):
+
+   ```bash
+   docker exec -it addon_local_eink_dashboard \
+       python3 /usr/lib/reminders-bridge/setup_2fa.py
+   ```
+
+   (Container-Name mit `docker ps | grep eink` pruefen, falls abweichend.)
+3. Das Skript loggt ein, Apple pusht den Code, du tippst ihn ein; es ruft
+   `validate_2fa_code()` + `trust_session()`. Session + Trust landen in
+   `/data/pyicloud` und **ueberleben Neustarts und Add-on-Updates**.
+4. Fertig. Der naechste Reminder-Refresh nutzt die getrustete Session. Der
+   Trust-Cookie haelt ~1 Jahr; erst dann ist das Setup zu wiederholen.
+
+**Ohne Shell-Zugang?** Siehe `openQuestions` in der Architektur - ein winziger
+Ingress-Login (HA-authentifiziert, kein offener Port) ist moeglich, erfordert aber
+eine kleine Server-Erweiterung. Der Shell-Weg oben ist bewusst die Standardloesung:
+null zusaetzlicher Code, null Web-Angriffsflaeche, nur ~1x/Jahr noetig.
+
+---
+
+## Persistenz & Backup
+
+Alles Zustandsbehaftete liegt in `/data` (im HA-Backup enthalten):
+
+- `/data/pyicloud/…session` - iCloud-Session + Trust-Token
+- `/data/.reminders-cache.json` - letzter Reminder-Stand (sofort warm nach Neustart)
+
+Ein Add-on-Update baut das Image neu, laesst `/data` aber unangetastet - 2FA muss
+also nach Updates **nicht** erneut gemacht werden.
+
+---
+
+## Fehlersuche
+
+| Symptom | Ursache / Fix |
+|---|---|
+| Log: `needs_reauth: 2FA verlangt` | 2FA-Setup (oben) noch nicht gelaufen oder Trust abgelaufen |
+| Reminders bleiben leer, kein 2FA-Hinweis | `icloud_apple_id` gesetzt, aber `icloud_apple_password` fehlt |
+| KPIs zeigen Mock-Werte | Live-KPIs brauchen `stripe_secret_key` **und** `app1_api_key` |
+| ESP32 bekommt 403 | `eink_key` gesetzt -> URL braucht `?key=...` |
+| Build bricht bei `npm ci` | `package-lock.json` fehlt im Ordner, oder `node_modules/` wurde mitkopiert |
+| Kalender leer | `icloud_calendars` muss die **Anzeigenamen** treffen; app-spezifisches PW pruefen |
+
+Build-/Laufzeit-Details und Risiken stehen in der Architektur-Ausgabe (`design`,
+`keyRisks`).

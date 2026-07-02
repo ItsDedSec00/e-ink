@@ -1,0 +1,115 @@
+#!/usr/bin/with-contenv bashio
+# ^ with-contenv exportiert die s6-Container-Umgebung; bashio liest /data/options.json.
+#
+# Uebersetzt die Add-on-Optionen (validiert vom Supervisor nach /data/options.json)
+# in die ENV-Variablen, die src/config.mjs bzw. src/server.mjs erwarten, und
+# startet dann den unveraenderten Node-Renderer aus /app.
+#
+# WICHTIG - Reminders/pyicloud:
+#   * src/sources/reminders.mjs spawnt die Bridge mit ICLOUD_USERNAME +
+#     ICLOUD_REMINDER_LISTS und ERBT den Rest von process.env. Deshalb muss
+#     ICLOUD_APPLE_PASSWORD (fuer die Bridge) hier GLOBAL exportiert werden.
+#   * config.reminderAppleId = ICLOUD_APPLE_ID || ICLOUD_USER  -> genau dieser
+#     Wert wird als ICLOUD_USERNAME an die Bridge gereicht. Wir setzen beide.
+#   * REMINDER_BRIDGE_PY / REMINDER_BRIDGE_SCRIPT / REMINDER_CACHE_FILE zeigen
+#     auf Container-Pfade (statt der Windows-Defaults in config.mjs).
+
+set -e
+
+# ---------------------------------------------------------------------------
+# Helper: Option -> ENV nur exportieren, wenn gesetzt (sonst greift der
+# Default im JS). bashio::config liefert bei leeren/ungesetzten Optionen
+# "null" bzw. leer; has_value filtert das sauber.
+# ---------------------------------------------------------------------------
+export_if_set() {
+  local opt="$1" var="$2"
+  if bashio::config.has_value "${opt}"; then
+    export "${var}=$(bashio::config "${opt}")"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Service / Netzwerk
+# ---------------------------------------------------------------------------
+export EINK_PORT="8080"                 # fix; via ports: 8080/tcp gemappt
+export DATA_DIR="/data"                 # persistentes Add-on-Volume
+
+export_if_set 'eink_key'          'EINK_KEY'
+export_if_set 'eink_cache_ttl'    'EINK_CACHE_TTL'   # in server.mjs direkt gelesen
+export_if_set 'eink_tz'           'EINK_TZ'
+export_if_set 'eink_windows_open' 'EINK_WINDOWS_OPEN'
+
+# ---------------------------------------------------------------------------
+# Wetter (Open-Meteo, kein Key). Code nutzt EINK_LAT / EINK_LON (NICHT *_WEATHER_LAT).
+# ---------------------------------------------------------------------------
+export_if_set 'eink_weather_city' 'EINK_WEATHER_CITY'
+export_if_set 'eink_lat'          'EINK_LAT'
+export_if_set 'eink_lon'          'EINK_LON'
+
+# ---------------------------------------------------------------------------
+# KPI-/Kosten-APIs (alle optional -> ohne sie greift der Mock-Fallback)
+# ---------------------------------------------------------------------------
+export_if_set 'app1_api_key'         'APP1_API_KEY'
+export_if_set 'app1_api_url'         'APP1_API_URL'
+export_if_set 'app2_api_key'         'APP2_API_KEY'
+export_if_set 'app2_api_url'         'APP2_API_URL'
+export_if_set 'app_primary_match'    'APP_PRIMARY_MATCH'
+export_if_set 'app_secondary_match'  'APP_SECONDARY_MATCH'
+export_if_set 'stripe_secret_key'    'STRIPE_SECRET_KEY'
+export_if_set 'venice_admin_key'     'VENICE_ADMIN_KEY'
+export_if_set 'fal_admin_key'        'FAL_ADMIN_KEY'
+export_if_set 'openrouter_admin_key' 'OPENROUTER_ADMIN_KEY'
+
+# ---------------------------------------------------------------------------
+# iCloud-Kalender (CalDAV, app-spezifisches Passwort) + oeffentliche iCal-Feeds
+# ---------------------------------------------------------------------------
+export_if_set 'icloud_user'       'ICLOUD_USER'
+export_if_set 'icloud_app_pw'     'ICLOUD_APP_PW'
+export_if_set 'icloud_calendars'  'ICLOUD_CALENDARS'
+export_if_set 'ical_urls'         'ICAL_URLS'
+
+# ---------------------------------------------------------------------------
+# iCloud-Reminders ueber die pyicloud-Bridge (Container-Pfade + ENV-Passwort)
+# ---------------------------------------------------------------------------
+# Container-Pfade fuer die Bridge (ueberschreiben die Windows-Defaults in config.mjs)
+export REMINDER_BRIDGE_PY="/usr/bin/python3"
+export REMINDER_BRIDGE_SCRIPT="/usr/lib/reminders-bridge/bridge.py"
+export REMINDER_CACHE_FILE="/data/.reminders-cache.json"
+export ICLOUD_COOKIE_DIR="/data/pyicloud"        # Session + Trust persistent
+
+export_if_set 'icloud_reminder_lists' 'ICLOUD_REMINDER_LISTS'
+export_if_set 'reminder_refresh_min'  'REMINDER_REFRESH_MIN'
+
+# Apple-ID fuer die Reminder-Bridge. config.reminderAppleId = ICLOUD_APPLE_ID
+# || ICLOUD_USER -> als ICLOUD_USERNAME an die Bridge. Wir setzen ICLOUD_APPLE_ID
+# aus der Option, fallen aber auf icloud_user zurueck, damit Reminders auch
+# funktionieren, wenn nur die Kalender-Apple-ID gepflegt ist.
+if bashio::config.has_value 'icloud_apple_id'; then
+  export ICLOUD_APPLE_ID="$(bashio::config 'icloud_apple_id')"
+elif bashio::config.has_value 'icloud_user'; then
+  export ICLOUD_APPLE_ID="$(bashio::config 'icloud_user')"
+fi
+
+# Passwort fuer pyicloud MUSS global in der Prozess-Env liegen, weil die Bridge
+# es via inherited process.env liest (reminders.mjs setzt es nicht explizit).
+if bashio::config.has_value 'icloud_apple_password'; then
+  export ICLOUD_APPLE_PASSWORD="$(bashio::config 'icloud_apple_password')"
+fi
+
+# ---------------------------------------------------------------------------
+# Diagnose-Log (Secrets NICHT ausgeben)
+# ---------------------------------------------------------------------------
+bashio::log.info "eInk-Renderer startet auf :${EINK_PORT} (TZ=${EINK_TZ:-Europe/Berlin}, Cache=${EINK_CACHE_TTL:-300}s)"
+if bashio::config.has_value 'icloud_apple_id' || bashio::config.has_value 'icloud_user'; then
+  if bashio::config.has_value 'icloud_apple_password'; then
+    bashio::log.info "Reminders-Bridge aktiv (Apple-ID gesetzt). Bei Erst-Login 2FA-Setup ausfuehren."
+  else
+    bashio::log.warning "Apple-ID gesetzt, aber icloud_apple_password fehlt -> Reminders bleiben leer."
+  fi
+else
+  bashio::log.info "Keine Apple-ID gesetzt -> Reminders deaktiviert (Kalender/KPIs laufen unabhaengig)."
+fi
+
+# exec -> Node erbt PID 1 des Service-Trees + die ENV; s6 ueberwacht den Prozess.
+cd /app
+exec node src/server.mjs

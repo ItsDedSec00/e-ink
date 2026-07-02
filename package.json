@@ -1,0 +1,23 @@
+{
+  "name": "dashboard-eink",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/server.mjs",
+    "preview": "node src/preview.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "dotenv": "^17.4.2",
+    "node-ical": "^0.26.1",
+    "satori": "^0.26.0",
+    "stripe": "^22.2.0",
+    "tsdav": "^2.2.2"
+  }
+}

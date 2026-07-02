@@ -1,0 +1,30 @@
+# ── Secrets / lokale Konfiguration — NIEMALS committen ──
+.env
+.env.*
+!.env.example
+# ESP32-WLAN/Renderer-Zugangsdaten (aus *.example ableiten)
+firmware/*/src/secrets.h
+
+# ── Persönliche Daten / Render-Ausgaben ──
+# Vorschau-PNGs zeigen echte KPIs/Kalender/Erinnerungen
+/*.png
+# iCloud-Reminder-Cache enthält echte Aufgaben-Titel
+.reminders-cache.json
+.reminders-cache*.json
+
+# ── Build-Artefakte ──
+node_modules/
+# Python-Bytecode (HA-Add-on-Bridge)
+__pycache__/
+*.py[cod]
+# PlatformIO-Buildordner (kompilierte .bin enthalten eingebettete Secrets!)
+firmware/*/.pio/
+firmware/**/.pio/
+
+# ── Lokale Tooling-/OS-Dateien ──
+.claude/
+fw_check.ps1
+fw_check.txt
+*.log
+.DS_Store
+Thumbs.db
