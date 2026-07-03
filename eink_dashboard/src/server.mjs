@@ -6,6 +6,7 @@ import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders, onRemindersRefreshed } from './sources/reminders.mjs'
 import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
 import { APP_HTML } from './webui.mjs'
+import { fireButtonEvent } from './sources/hass.mjs'
 
 const CACHE_TTL_MS = Number(process.env.EINK_CACHE_TTL || 300) * 1000
 let cache = null    // { png, at, bat }
@@ -146,11 +147,13 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(status)); return
   }
 
-  // Button -> HA (Platzhalter, bis HA verdrahtet ist)
+  // Button (ESP32) -> HA-Event `eink_dashboard_button` { button: N }.
   if (req.method === 'POST' && path.startsWith('/button/')) {
-    const n = path.slice('/button/'.length)
-    console.log(`[button] ${n} gedrückt (HA-Aktion noch nicht verdrahtet)`)
-    res.writeHead(202).end('accepted'); return
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    const n = Number(path.slice('/button/'.length))
+    const ok = await fireButtonEvent(n)
+    console.log(`[button] ${n} -> HA-Event eink_dashboard_button: ${ok ? 'ok' : 'HA nicht erreichbar'}`)
+    res.writeHead(ok ? 202 : 502).end(ok ? 'accepted' : 'ha unreachable'); return
   }
 
   // iCloud-2FA-Backend fuer die Web-UI (Login/Code-Validierung ueber die pyicloud-Bridge).

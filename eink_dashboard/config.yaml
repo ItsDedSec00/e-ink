@@ -1,5 +1,5 @@
 name: eInk Dashboard Server
-version: "1.4.1"
+version: "1.5.0"
 slug: eink_dashboard
 description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
 url: https://github.com/ItsDedSec00/e-ink
@@ -12,6 +12,11 @@ arch:
 init: false
 startup: application
 boot: auto
+
+# --- Home-Assistant-Integration (Core API) ---
+# Fenster-Sensoren (states abfragen) + eInk-Button-Events (event feuern). Nutzt den
+# automatisch bereitgestellten SUPERVISOR_TOKEN.
+homeassistant_api: true
 
 # --- Netzwerk ---
 # Ingress: authentifizierte Web-UI in der HA-Seitenleiste (Vorschau + iCloud-2FA-
@@ -42,6 +47,7 @@ options:
   eink_cache_ttl: 300
   eink_weather_city: München
   eink_windows_open: false
+  window_sensors: ""
   icloud_calendars: ""
   reminder_refresh_min: 5
 
@@ -54,6 +60,7 @@ schema:
   eink_cache_ttl: "int(1,86400)?"
   eink_tz: "str?"
   eink_windows_open: "bool?"
+  window_sensors: "str?"
   # Wetter (Open-Meteo, kein Key)
   eink_weather_city: "str?"
   eink_lat: "float?"

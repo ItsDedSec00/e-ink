@@ -56,8 +56,15 @@ export const config = {
   port: Number(env.EINK_PORT || 8080),
   einkKey: env.EINK_KEY || '',          // optionales Shared Secret für GET /eink
   tz: env.EINK_TZ || 'Europe/Berlin',
-  // Fenster-Status (Platzhalter bis HA verdrahtet ist): EINK_WINDOWS_OPEN=true -> roter Streifen
+  // Fenster-Status: bevorzugt echte HA-Fenstersensoren (windowSensors), sonst der
+  // statische Platzhalter EINK_WINDOWS_OPEN=true -> roter Streifen.
   windowsOpen: env.EINK_WINDOWS_OPEN === 'true',
+  // Home Assistant Core API (im Add-on: SUPERVISOR_TOKEN + homeassistant_api:true).
+  // Lokal/standalone via HA_BASE_URL + HA_TOKEN ueberschreibbar.
+  haBaseUrl: env.HA_BASE_URL || (env.SUPERVISOR_TOKEN ? 'http://supervisor/core/api' : ''),
+  haToken: env.HA_TOKEN || env.SUPERVISOR_TOKEN || '',
+  // Fenster-Sensoren: binary_sensor-Entity-IDs, komma-getrennt (offen -> roter Streifen).
+  windowSensors: (env.WINDOW_SENSORS || '').split(',').map(s => s.trim()).filter(Boolean),
 
   // Wetter (Open-Meteo, kein Key nötig). Koordinaten optional — sonst wird die Stadt geocodet.
   weatherCity: env.EINK_WEATHER_CITY || 'München',

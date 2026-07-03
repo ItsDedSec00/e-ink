@@ -16,7 +16,8 @@
 #include <bb_epaper.h>
 #include <time.h>
 #include "esp_sleep.h"
-#include "secrets.h"   // WIFI_SSID, WIFI_PASS, IMG_URL
+#include "driver/rtc_io.h"   // RTC-Pullups fuer das ext1-Button-Wakeup
+#include "secrets.h"   // WIFI_SSID, WIFI_PASS, IMG_HOST, EINK_KEY, IMG_URL
 
 // Panel-Pins (Seeed XIAO ePaper Board EE04)
 #define DC_PIN     10
@@ -25,6 +26,13 @@
 #define RESET_PIN  38
 #define SCK_PIN    7
 #define MOSI_PIN   9
+
+// Onboard-Taster (Seeed XIAO ePaper Board EE04): KEY0/1/2, active-low. Alle
+// RTC-faehig (<=21) -> koennen den ESP32-S3 per ext1 aus dem Deep Sleep wecken.
+#define BTN0_PIN   2
+#define BTN1_PIN   3
+#define BTN2_PIN   5
+#define BTN_MASK   ((1ULL << BTN0_PIN) | (1ULL << BTN1_PIN) | (1ULL << BTN2_PIN))
 
 // Akku-Messung: EE04 hat einen eingebauten, schaltbaren 1:2-Spannungsteiler
 // (Seeed-Wiki: ADC an A0/GPIO1, Enable an GPIO6). Enable nur beim Messen -> kein
@@ -69,8 +77,15 @@ static void sleepMinutes(int m) {
   Serial.flush();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_OFF);
+  // Zusaetzlich per Tastendruck aufwachen: RTC-Pullups an den 3 Tastern (active-low),
+  // dann ext1 auf "irgendein Pin LOW". So wecken die Buttons aus dem Deep Sleep.
+  for (int p : { BTN0_PIN, BTN1_PIN, BTN2_PIN }) {
+    rtc_gpio_pullup_en((gpio_num_t)p);
+    rtc_gpio_pulldown_dis((gpio_num_t)p);
+  }
+  esp_sleep_enable_ext1_wakeup(BTN_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
   esp_sleep_enable_timer_wakeup((uint64_t)m * 60ULL * 1000000ULL);
-  esp_deep_sleep_start();           // kehrt nie zurueck; beim Timer-Wake startet setup() neu
+  esp_deep_sleep_start();           // kehrt nie zurueck; beim Timer-/Button-Wake startet setup() neu
 }
 
 // ── Fehlerpfad: NICHT schlafen ───────────────────────────────────────────────
@@ -195,6 +210,20 @@ static bool fetchAndDraw(int bat) {
   http.end();
   Serial.printf("Bild dekodiert: %ld/%ld Bytes\n", bc, IMG_BYTES);
   return bc == IMG_BYTES;
+}
+
+// ── Button an HA melden ──────────────────────────────────────────────────────
+// POST /button/<idx> ans Add-on -> feuert in HA das Event eink_dashboard_button.
+static void postButton(int idx) {
+  char url[176];
+  snprintf(url, sizeof(url), "http://%s/button/%d?key=%s", IMG_HOST, idx, EINK_KEY);
+  HTTPClient http;
+  http.setConnectTimeout(6000);
+  http.setTimeout(8000);
+  if (!http.begin(url)) { Serial.println("Button-POST: http.begin fehlgeschlagen"); return; }
+  int code = http.POST((uint8_t *)nullptr, 0);
+  Serial.printf("Button %d -> POST -> HTTP %d\n", idx, code);
+  http.end();
 }
 
 // ── Fehlerbildschirm ─────────────────────────────────────────────────────────
@@ -330,10 +359,23 @@ void setup() {
   delay(800);
   Serial.println("\n=== eInk Dashboard: aufgewacht ===");
 
-  // Timer-Wake (Akku, alle 30/60 min) vs. frischer Boot (RESET/USB-Einstecken).
-  // Nur beim frischen Boot halten wir spaeter ein Flash-Fenster offen.
-  g_freshBoot = (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER);
-  Serial.printf("Wake-Grund: %s\n", g_freshBoot ? "frischer Boot -> Flash-Fenster aktiv" : "Timer-Wake");
+  // Wake-Grund: Timer (Akku-Refresh), ext1 (Tastendruck) oder frischer Boot
+  // (Power-On/RESET/USB). Flash-Fenster NUR beim echten frischen Boot (nicht bei
+  // Taste — sonst wuerde jeder Druck 30s USB offenhalten).
+  esp_sleep_wakeup_cause_t wake = esp_sleep_get_wakeup_cause();
+  g_freshBoot = (wake == ESP_SLEEP_WAKEUP_UNDEFINED);
+  int pressedBtn = -1;
+  if (wake == ESP_SLEEP_WAKEUP_EXT1) {
+    uint64_t st = esp_sleep_get_ext1_wakeup_status();
+    if      (st & (1ULL << BTN0_PIN)) pressedBtn = 0;
+    else if (st & (1ULL << BTN1_PIN)) pressedBtn = 1;
+    else if (st & (1ULL << BTN2_PIN)) pressedBtn = 2;
+  }
+  Serial.printf("Wake-Grund: %s\n",
+                wake == ESP_SLEEP_WAKEUP_TIMER ? "Timer-Wake" :
+                pressedBtn >= 0 ? "Button-Wake" :
+                g_freshBoot ? "frischer Boot -> Flash-Fenster aktiv" : "sonstiger Wake");
+  if (pressedBtn >= 0) Serial.printf("Taste %d gedrueckt.\n", pressedBtn);
 
   // Panel FRUEH initialisieren, damit auch Verbindungsfehler angezeigt werden koennen.
   bbep.initIO(DC_PIN, RESET_PIN, BUSY_PIN, CS_PIN, MOSI_PIN, SCK_PIN);
@@ -351,6 +393,8 @@ void setup() {
   Serial.printf("WLAN ok: IP %s, RSSI %d dBm\n", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
 
   configTzTime(TZ_STR, "pool.ntp.org", "time.nist.gov");  // NTP startet im Hintergrund
+
+  if (pressedBtn >= 0) postButton(pressedBtn);   // Tastendruck an HA melden (Event)
 
   // Bild streamend ins Panel-Buffer dekodieren (bat wurde oben schon gemessen)
   bbep.fillScreen(BBEP_WHITE);

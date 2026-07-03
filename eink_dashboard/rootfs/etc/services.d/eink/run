@@ -38,6 +38,7 @@ export_if_set 'eink_key'          'EINK_KEY'
 export_if_set 'eink_cache_ttl'    'EINK_CACHE_TTL'   # in server.mjs direkt gelesen
 export_if_set 'eink_tz'           'EINK_TZ'
 export_if_set 'eink_windows_open' 'EINK_WINDOWS_OPEN'
+export_if_set 'window_sensors'    'WINDOW_SENSORS'
 
 # ---------------------------------------------------------------------------
 # Wetter (Open-Meteo, kein Key). Code nutzt EINK_LAT / EINK_LON (NICHT *_WEATHER_LAT).

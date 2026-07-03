@@ -131,6 +131,40 @@ also nach Updates **nicht** erneut gemacht werden.
 
 ---
 
+## Fenster-Sensoren & eInk-Buttons (Home-Assistant-Integration)
+
+Das Add-on spricht die HA-Core-API (`homeassistant_api: true`, automatischer
+`SUPERVISOR_TOKEN`) fuer zwei Dinge:
+
+**Fenster-Streifen:** Unter `window_sensors` eine oder mehrere `binary_sensor`-
+Entity-IDs komma-getrennt eintragen, z.B.
+`binary_sensor.wohnzimmer_fenster,binary_sensor.kueche_fenster`. Ist EINER davon
+offen (`on`), wird der "Fenster"-Streifen unten rot. Leer -> statischer Platzhalter
+`eink_windows_open`.
+
+**3 Buttons:** Die Board-Taster (EE04: KEY0/1/2 an GPIO2/3/5) wecken den ESP32 aus
+dem Deep Sleep und melden den Druck ans Add-on, das in HA das Event
+**`eink_dashboard_button`** mit `{ "button": 0|1|2 }` feuert. Daran haengst du eine
+Automatisierung:
+
+```yaml
+automation:
+  - alias: eInk Taste 0 -> Gute Nacht
+    trigger:
+      - platform: event
+        event_type: eink_dashboard_button
+        event_data:
+          button: 0
+    action:
+      - service: script.gute_nacht
+```
+
+(Taste 0 = KEY0/GPIO2, 1 = KEY1/GPIO3, 2 = KEY2/GPIO5.) Ein Druck weckt das Panel,
+meldet das Event (HA reagiert in ~5-10 s, sobald WLAN steht) und macht danach einen
+normalen Refresh. Voraussetzung: die Firmware mit Button-Support ist geflasht.
+
+---
+
 ## Sicherheit
 
 Das Add-on läuft im **Protection-Mode** ohne erhöhte Rechte: kein `host_network`,
