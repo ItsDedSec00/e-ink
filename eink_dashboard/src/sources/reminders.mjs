@@ -107,6 +107,7 @@ function mapReminders(result, limit = 20) {
 let cache = { items: null, at: 0 }   // items: [{title, due:Date|null, list}]
 let refreshing = false
 let intervalStarted = false
+let onRefreshedCb = null              // feuert nach jedem erfolgreichen Refresh
 
 function persist() {
   try {
@@ -142,6 +143,7 @@ async function refresh() {
       cache = { items: mapReminders(result).map(({ title, due, list }) => ({ title, due, list })), at: Date.now() }
       persist()
       console.log(`[reminders] Cache erneuert: ${cache.items.length} relevant (${((Date.now() - t0) / 1000).toFixed(0)}s)`)
+      try { onRefreshedCb && onRefreshedCb() } catch { /* egal */ }   // Render-Caches invalidieren -> sofort sichtbar
     } else {
       console.warn('[reminders] Refresh lieferte keine Daten (Auth/Bridge?).')
     }
@@ -149,6 +151,15 @@ async function refresh() {
     refreshing = false
   }
 }
+
+// Callback, der nach jedem erfolgreichen Reminder-Refresh feuert. server.mjs nutzt
+// ihn, um die Render-/Datencaches zu invalidieren -> frische Erinnerungen sofort
+// sichtbar (statt bis zum naechsten 5-Min-Datencache-Refresh zu warten).
+export function onRemindersRefreshed(cb) { onRefreshedCb = cb }
+
+// Sofortigen Refresh anstossen (z.B. direkt nach erfolgreichem 2FA-Setup), damit die
+// Erinnerungen nicht erst beim naechsten Intervall geladen werden.
+export function refreshRemindersNow() { return refresh() }
 
 // Beim Serverstart: Platten-Cache laden (sofort warm) + Hintergrund-Loop starten.
 export function prewarmReminders() {

@@ -3,7 +3,7 @@ import http from 'node:http'
 import { config } from './config.mjs'
 import { getEinkData } from './aggregate.mjs'
 import { renderEinkPng, renderEinkPacked } from './render.mjs'
-import { prewarmReminders } from './sources/reminders.mjs'
+import { prewarmReminders, onRemindersRefreshed } from './sources/reminders.mjs'
 import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
 import { APP_HTML } from './webui.mjs'
 
@@ -67,6 +67,14 @@ async function renderCachedBin(bat) {
   binCache = { bin, at: Date.now(), bat }
   return bin
 }
+
+// Frische Erinnerungen (z.B. ~85s nach Start oder direkt nach dem 2FA-Setup) ->
+// Render-/Datencache invalidieren, damit der naechste Abruf sie SOFORT zeigt
+// (statt bis zum naechsten 5-Min-Refresh zu warten).
+onRemindersRefreshed(() => {
+  cache = null; binCache = null; dataCache = null
+  refreshData().catch(() => {})
+})
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)

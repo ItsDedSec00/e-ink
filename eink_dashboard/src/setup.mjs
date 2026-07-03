@@ -5,6 +5,7 @@
 // pending-2FA-Session verlieren).
 import { spawn } from 'node:child_process'
 import { config } from './config.mjs'
+import { refreshRemindersNow } from './sources/reminders.mjs'
 
 let child = null
 let buf = ''
@@ -74,7 +75,10 @@ export async function icloudSubmitCode(code) {
   const resp = await sendOp('submit_2fa', { code: String(code || '') })
   if (resp.error) return { ok: false, message: humanError(resp.error) }
   const r = resp.result || {}
-  if (r.trusted) resetBridge()   // Session liegt jetzt persistent in /data -> Setup-Prozess kann weg
+  if (r.trusted) {
+    resetBridge()               // Session liegt jetzt persistent in /data -> Setup-Prozess kann weg
+    try { refreshRemindersNow() } catch { /* egal */ }   // Erinnerungen SOFORT laden, nicht erst beim naechsten Intervall
+  }
   return { ok: true, ...r }
 }
 
