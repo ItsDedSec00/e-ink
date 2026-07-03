@@ -394,7 +394,9 @@ void setup() {
 
   configTzTime(TZ_STR, "pool.ntp.org", "time.nist.gov");  // NTP startet im Hintergrund
 
-  if (pressedBtn >= 0) postButton(pressedBtn);   // Tastendruck an HA melden (Event)
+  // Taste 0/1 -> HA-Event (Szenen); Taste 2 = nur Panel aktualisieren (kein Event -
+  // der Fetch+Render unten ist der Refresh, mit LIVE-Fensterstatus vom Add-on).
+  if (pressedBtn == 0 || pressedBtn == 1) postButton(pressedBtn);
 
   // Bild streamend ins Panel-Buffer dekodieren (bat wurde oben schon gemessen)
   bbep.fillScreen(BBEP_WHITE);

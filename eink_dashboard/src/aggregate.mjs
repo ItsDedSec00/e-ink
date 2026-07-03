@@ -7,7 +7,6 @@ import { getStripe } from './sources/stripe.mjs'
 import { getWeather } from './sources/weather.mjs'
 import { getCalendar } from './sources/calendar.mjs'
 import { getReminders } from './sources/reminders.mjs'
-import { getWindowsOpen } from './sources/hass.mjs'
 
 // ── Formatierung ──────────────────────────────────────────────────────────────
 const DASH = '—'
@@ -83,7 +82,7 @@ function placeholderButtons() {
 
 // ── Live ──────────────────────────────────────────────────────────────────────
 async function live() {
-  const [stripe, apps, costUsd, fx, weather, calendar, reminders, windowsOpen] = await Promise.all([
+  const [stripe, apps, costUsd, fx, weather, calendar, reminders] = await Promise.all([
     getStripe().catch(() => null),
     getApps().catch(() => ({ server: null, users: { app1: {}, app2: {} }, ok: {} })),
     getCost30dUsdByApp().catch(() => ({ app1: 0, app2: 0, Others: 0 })),
@@ -91,7 +90,6 @@ async function live() {
     getWeather().catch(() => null),
     getCalendar().catch(() => null),
     getReminders(15).catch(() => null),
-    getWindowsOpen().catch(() => null),
   ])
 
   // Pflichtquelle Stripe fehlt -> lieber Mock als kaputter Schirm
@@ -126,7 +124,7 @@ async function live() {
     calendar, // { days: [...] } oder null -> Renderer zeigt Hinweis
     reminders, // [{title, due, overdue}] oder null
     server: apps.server ?? { cpu: 0, mem: 0, load: 0 },
-    windows: { open: windowsOpen ?? config.windowsOpen }, // HA-Sensoren, sonst Platzhalter
+    windows: { open: config.windowsOpen }, // statischer Fallback; Live-Status setzt der Render-Pfad
     _mock: false,
   }
 }

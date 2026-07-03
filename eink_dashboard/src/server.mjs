@@ -6,7 +6,7 @@ import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders, onRemindersRefreshed } from './sources/reminders.mjs'
 import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
 import { APP_HTML } from './webui.mjs'
-import { fireButtonEvent, getWindowCandidates, readSelectedWindows, saveSelectedWindows } from './sources/hass.mjs'
+import { fireButtonEvent, getWindowCandidates, readSelectedWindows, saveSelectedWindows, getWindowsOpen } from './sources/hass.mjs'
 
 const CACHE_TTL_MS = Number(process.env.EINK_CACHE_TTL || 300) * 1000
 let cache = null    // { png, at, bat }
@@ -55,17 +55,27 @@ async function getCachedData() {
   return dataCache.data                        // sofort (ggf. minimal veraltet)
 }
 
+// Fenster-Status wird LIVE pro Anfrage geholt (billig) und ueberschreibt den
+// statischen Wert -> ein Refresh (auch Taste 3) zeigt den aktuellen Stand SOFORT,
+// ohne auf den 5-min-Datencache zu warten. Er ist Teil des Render-Cache-Keys, damit
+// eine Fensteraenderung ein Neu-Rendern ausloest.
+async function liveWindows() { return await getWindowsOpen().catch(() => null) }
+
 async function renderCached(bat) {
-  if (cache && cache.bat === bat && Date.now() - cache.at < CACHE_TTL_MS) return cache.png
-  const png = await renderEinkPng({ ...(await getCachedData()), battery: bat })
-  cache = { png, at: Date.now(), bat }
+  const win = await liveWindows()
+  if (cache && cache.bat === bat && cache.win === win && Date.now() - cache.at < CACHE_TTL_MS) return cache.png
+  const data = await getCachedData()
+  const png = await renderEinkPng({ ...data, windows: { open: win ?? data.windows.open }, battery: bat })
+  cache = { png, at: Date.now(), bat, win }
   return png
 }
 
 async function renderCachedBin(bat) {
-  if (binCache && binCache.bat === bat && Date.now() - binCache.at < CACHE_TTL_MS) return binCache.bin
-  const bin = await renderEinkPacked({ ...(await getCachedData()), battery: bat })
-  binCache = { bin, at: Date.now(), bat }
+  const win = await liveWindows()
+  if (binCache && binCache.bat === bat && binCache.win === win && Date.now() - binCache.at < CACHE_TTL_MS) return binCache.bin
+  const data = await getCachedData()
+  const bin = await renderEinkPacked({ ...data, windows: { open: win ?? data.windows.open }, battery: bat })
+  binCache = { bin, at: Date.now(), bat, win }
   return bin
 }
 
