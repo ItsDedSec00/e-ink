@@ -62,9 +62,9 @@ function sendOp(op, args = {}, timeoutMs = 90000) {
 
 // GET /setup/state  ->  { state: 'need_code' | 'authenticated' | 'no_password' | 'error', ... }
 // fresh=true killt den Bridge-Prozess vorher (neuer Login -> Apple pusht neuen Code).
-export async function icloudAuthState({ fresh = false } = {}) {
+export async function icloudAuthState({ fresh = false, initiate = false } = {}) {
   if (fresh) resetBridge()
-  const resp = await sendOp('auth_state', {})
+  const resp = await sendOp('auth_state', { initiate })
   if (resp.error) return { state: 'error', message: humanError(resp.error) }
   return resp.result || { state: 'error', message: 'Keine Antwort der Bridge.' }
 }

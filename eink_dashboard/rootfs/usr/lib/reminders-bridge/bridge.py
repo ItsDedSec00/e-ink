@@ -82,20 +82,63 @@ def _ensure_service() -> PyiCloudService:
                 cookie_directory=COOKIE_DIR,
             )
         except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            if "503" in msg or "Service Temporarily Unavailable" in msg or "srp" in msg.lower():
+                # Apple blockt die SRP-Anmeldung (KEIN Code-/Passwortfehler - dieselben
+                # Daten funktionieren im Browser). Fast immer ein Cooldown durch zu
+                # viele Anmeldeversuche in kurzer Zeit.
+                raise RuntimeError(
+                    "Apple hat die Anmeldung voruebergehend blockiert (503). Das ist "
+                    "meist ein Cooldown durch zu viele Anmeldeversuche - bitte ~15-60 "
+                    "Minuten warten, die Seite NICHT mehrfach neu laden, dann erneut "
+                    "versuchen."
+                ) from e
             raise RuntimeError(f"Auth fehlgeschlagen: {e}") from e
     return _api
 
 
+# -- Trust-Marker: trennt "darf einloggen" (Setup, nutzergesteuert) von "darf NICHT
+# von selbst einloggen" (Reminder-Refresh). Ohne diesen Marker wuerde jeder
+# Hintergrund-Refresh einen Apple-Login (2FA-Push + Rate-Limit/503) ausloesen.
+def _trust_marker() -> str:
+    return os.path.join(COOKIE_DIR, ".trusted")
+
+
+def _mark_trusted() -> None:
+    try:
+        os.makedirs(COOKIE_DIR, mode=0o700, exist_ok=True)
+        with open(_trust_marker(), "w", encoding="utf-8") as f:
+            f.write("ok\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clear_trusted() -> None:
+    try:
+        os.remove(_trust_marker())
+    except FileNotFoundError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def get_api() -> PyiCloudService:
-    """Return a logged-in, TRUSTED PyiCloudService fuer den Render-/Reminder-Pfad.
-    Bei fehlendem Trust (Erst-Login/abgelaufen) sauber mit needs_reauth abbrechen,
-    damit reminders.mjs auf null faellt. 2FA richtet der Nutzer ueber die Add-on-
-    Weboberflaeche ein."""
+    """Logged-in, TRUSTED service fuer den Render-/Reminder-Pfad. Loggt NUR ein, wenn
+    ein erfolgreiches 2FA-Setup den Trust-Marker hinterlassen hat - sonst wuerden die
+    periodischen Reminder-Refreshes bei jedem Lauf einen Apple-Login (2FA-Push +
+    Rate-Limit/503-Cooldown) ausloesen. Der Login wird ausschliesslich ueber den
+    nutzergesteuerten /setup-Flow angestossen."""
+    if not os.path.exists(_trust_marker()):
+        raise RuntimeError(
+            "needs_reauth: kein Trust hinterlegt - 2FA-Setup ueber die "
+            "Add-on-Weboberflaeche ausfuehren."
+        )
     api = _ensure_service()
     if api.requires_2fa:
+        _clear_trusted()   # Trust abgelaufen -> Marker weg, damit wir nicht weiter hammern
         raise RuntimeError(
-            "needs_reauth: 2FA verlangt - Trust abgelaufen oder Erst-Login. "
-            "2FA-Setup ueber die Add-on-Weboberflaeche: http://<ha-ip>:8080/setup"
+            "needs_reauth: 2FA verlangt - Trust abgelaufen. 2FA-Setup ueber die "
+            "Add-on-Weboberflaeche wiederholen."
         )
     return api
 
@@ -332,9 +375,14 @@ def op_delete_reminder(args: dict) -> Any:
 
 # -- Auth / 2FA setup (fuer die /setup-Weboberflaeche) -------------------------
 
-def op_auth_state(_args: dict) -> Any:
-    """Status fuer die Setup-UI. Legt beim ersten Aufruf die Session an -> Apple
-    pusht dann den 6-stelligen 2FA-Code auf die Trusted Devices."""
+def op_auth_state(args: dict) -> Any:
+    """Status fuer die Setup-UI. Loggt NUR ein, wenn initiate=True (Nutzer hat
+    'Anmelden' geklickt) -> dann pusht Apple den 6-stelligen Code. Ohne initiate und
+    ohne bereits laufende Session: 'idle' (KEIN Push -> verhindert Auto-Login-Spam
+    beim Seitenladen, der sonst Apples 503-Cooldown ausloest)."""
+    initiate = bool(args.get("initiate", False))
+    if _api is None and not initiate:
+        return {"state": "idle"}
     try:
         api = _ensure_service()
     except RuntimeError as e:
@@ -349,6 +397,8 @@ def op_auth_state(_args: dict) -> Any:
         trusted = bool(getattr(api, "is_trusted_session", True))
     except Exception:  # noqa: BLE001
         trusted = True
+    if trusted:
+        _mark_trusted()
     return {"state": "authenticated", "trusted": trusted}
 
 
@@ -375,6 +425,8 @@ def op_submit_2fa(args: dict) -> Any:
             trusted = bool(api.trust_session())
     except Exception:  # noqa: BLE001
         trusted = False
+    if trusted:
+        _mark_trusted()
     return {"success": True, "state": "authenticated", "trusted": trusted}
 
 

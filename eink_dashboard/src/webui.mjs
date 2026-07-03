@@ -67,6 +67,7 @@ export const APP_HTML = `<!doctype html>
   <div class="card">
     <h2>iCLOUD-ERINNERUNGEN</h2>
     <div id="remStatus"><span class="spin"></span>Pr&uuml;fe Status &hellip;</div>
+    <button class="btn" id="remSignin" type="button" style="display:none;margin-top:12px">Mit iCloud anmelden &amp; Code anfordern</button>
     <form id="remForm" style="display:none">
       <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="000000" aria-label="6-stelliger Code">
       <div class="row">
@@ -75,6 +76,7 @@ export const APP_HTML = `<!doctype html>
       </div>
     </form>
     <div id="remMsg" class="msg"></div>
+    <p class="muted" id="remHint" style="margin:12px 0 0;display:none">Apple sendet den Code an deine Trusted Devices. <b>Nicht mehrfach hintereinander anfordern</b> &ndash; zu viele Versuche l&ouml;sen einen Apple-Cooldown (503) aus.</p>
   </div>
 
   <div class="card">
@@ -114,30 +116,52 @@ export const APP_HTML = `<!doctype html>
  }
 
  // --- iCloud-Erinnerungen (2FA) ---
+ // WICHTIG: der Login (der Apples 2FA-Code pusht) wird NUR auf Klick ausgeloest
+ // (initiate=1), nie automatisch beim Laden. Sonst summieren sich die Versuche und
+ // Apple sperrt mit 503 (Cooldown). Ein Klick = genau ein Code.
  var remStatus=document.getElementById('remStatus'), remForm=document.getElementById('remForm'),
      codeEl=document.getElementById('code'), remMsg=document.getElementById('remMsg'),
-     remSubmit=document.getElementById('remSubmit'), remResend=document.getElementById('remResend');
+     remSubmit=document.getElementById('remSubmit'), remResend=document.getElementById('remResend'),
+     remSignin=document.getElementById('remSignin'), remHint=document.getElementById('remHint');
+ var remBusy=false;
  function setRemMsg(t,cls){ remMsg.textContent=t||''; remMsg.className='msg '+(cls||''); }
+ function showRem(which){ // 'idle' | 'code' | 'none'
+   remSignin.style.display = which==='idle' ? 'inline-block' : 'none';
+   remForm.style.display   = which==='code' ? 'block' : 'none';
+   remHint.style.display   = (which==='idle'||which==='code') ? 'block' : 'none';
+ }
  function renderRem(st){
-   if(!st){ remStatus.textContent='Keine Antwort vom Server.'; return; }
-   if(st.state==='need_code'){
+   if(!st){ remStatus.textContent='Keine Antwort vom Server.'; showRem('none'); return; }
+   if(st.state==='idle'){
+     remStatus.innerHTML='Noch nicht verbunden. Zum Aktivieren anmelden &ndash; Apple sendet dann <b>einmalig</b> einen Code an deine Ger&auml;te.';
+     showRem('idle');
+   } else if(st.state==='need_code'){
      remStatus.innerHTML='Ein <b>6-stelliger Code</b> wurde an deine Apple-Ger&auml;te gesendet. Gib ihn ein.';
-     remForm.style.display='block'; codeEl.value=''; codeEl.focus();
+     showRem('code'); codeEl.value=''; codeEl.focus();
    } else if(st.state==='authenticated'){
      var extra = st.trusted===false ? ' <span style="color:#d11">(Device-Trust nicht gesetzt.)</span>' : '';
      remStatus.innerHTML='✅ <b>Eingerichtet.</b> Erinnerungen erscheinen nach dem n&auml;chsten Refresh.'+extra;
-     remForm.style.display='none';
+     showRem('none');
    } else if(st.state==='no_password'){
      remStatus.innerHTML='Bitte im <b>Configuration</b>-Tab <code>icloud_apple_id</code> + <code>icloud_apple_password</code> setzen, Add-on neu starten, dann diese Seite neu laden.';
-     remForm.style.display='none';
+     showRem('none');
    } else {
-     remStatus.textContent='Fehler: '+(st.message||'unbekannt'); remForm.style.display='none';
+     remStatus.textContent='Fehler: '+(st.message||'unbekannt'); showRem('none');
    }
  }
- function loadRem(fresh){
-   remStatus.innerHTML='<span class="spin"></span>Verbinde mit iCloud &hellip;'; remForm.style.display='none'; setRemMsg('');
-   fetch(withParams('setup/state', fresh?'fresh=1':''), {cache:'no-store'}).then(function(r){return r.json();}).then(renderRem).catch(function(e){ remStatus.textContent='Netzwerkfehler: '+e; });
+ function loadRem(opts){
+   opts = opts || {};
+   if(remBusy) return; remBusy=true; remSignin.disabled=true; remResend.disabled=true;
+   var extras=[]; if(opts.fresh) extras.push('fresh=1'); if(opts.initiate) extras.push('initiate=1');
+   remStatus.innerHTML='<span class="spin"></span>'+(opts.initiate?'Verbinde mit iCloud &hellip;':'Pr&uuml;fe Status &hellip;');
+   showRem('none'); setRemMsg('');
+   fetch(withParams('setup/state', extras.join('&')), {cache:'no-store'})
+     .then(function(r){return r.json();})
+     .then(function(st){ remBusy=false; remSignin.disabled=false; remResend.disabled=false; renderRem(st); })
+     .catch(function(e){ remBusy=false; remSignin.disabled=false; remResend.disabled=false; remStatus.textContent='Netzwerkfehler: '+e; });
  }
+ remSignin.addEventListener('click', function(){ loadRem({initiate:true}); });
+ remResend.addEventListener('click', function(){ loadRem({initiate:true, fresh:true}); });
  remForm.addEventListener('submit', function(ev){ ev.preventDefault();
    var code=(codeEl.value||'').replace(/[^0-9]/g,''); if(code.length!==6){ setRemMsg('Bitte 6 Ziffern eingeben.','err'); return; }
    setRemMsg('Prüfe Code …',''); remSubmit.disabled=true;
@@ -147,8 +171,7 @@ export const APP_HTML = `<!doctype html>
        else setRemMsg(res.message||'Code abgelehnt.','err');
      }).catch(function(e){ remSubmit.disabled=false; setRemMsg('Netzwerkfehler: '+e,'err'); });
  });
- remResend.addEventListener('click', function(){ loadRem(true); });
 
- refreshPreview(); loadStatus(); loadRem(false);
+ refreshPreview(); loadStatus(); loadRem({});
 </script>
 </body></html>`

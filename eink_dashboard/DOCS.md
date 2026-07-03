@@ -97,10 +97,13 @@ ueber die **Add-on-Weboberflaeche** in der HA-Seitenleiste - kein SSH / kein `do
 1. Optionen `icloud_apple_id` + `icloud_apple_password` (das **echte** Apple-ID-
    Passwort, nicht das App-spezifische) setzen, Add-on **starten** bzw. neu starten.
 2. Add-on-Seite -> **"OPEN WEB UI"** (oder das Panel in der HA-Seitenleiste). Im
-   Abschnitt **iCloud-Erinnerungen** loggt sich das Add-on ein -> Apple pusht den
-   Code auf deine Trusted Devices (iPhone/iPad/Mac). Die Oberflaeche ist ueber HA
-   authentifiziert (Ingress) - keine IP/kein Port noetig. Direkt-Alternative:
-   `http://<ha-ip>:8080/` (mit `eink_key`: `…/?key=DEIN_KEY`).
+   Abschnitt **iCloud-Erinnerungen** auf **"Mit iCloud anmelden & Code anfordern"**
+   klicken -> Apple pusht den Code auf deine Trusted Devices (iPhone/iPad/Mac). Der
+   Login passiert NUR auf diesen Klick (kein Auto-Login beim Seitenladen), damit
+   Apple nicht wegen zu vieler Versuche mit **503** sperrt - fordere den Code **nicht
+   mehrfach hintereinander** an. Die Oberflaeche ist ueber HA authentifiziert
+   (Ingress) - keine IP/kein Port noetig. Direkt-Alternative: `http://<ha-ip>:8080/`
+   (mit `eink_key`: `…/?key=DEIN_KEY`).
 3. Code eingeben -> **Bestaetigen**. Die Seite ruft `validate_2fa_code()` +
    `trust_session()`; Session + Trust landen in `/data/pyicloud` und **ueberleben
    Neustarts und Add-on-Updates**. Kein Code angekommen? **Neuen Code anfordern**.
@@ -155,7 +158,8 @@ API-Aufrufen; alle Secrets bleiben in den (maskierten) Add-on-Optionen bzw. in
 
 | Symptom | Ursache / Fix |
 |---|---|
-| Log: `needs_reauth: 2FA verlangt` | 2FA-Setup (oben) noch nicht gelaufen oder Trust abgelaufen |
+| Log: `needs_reauth: 2FA verlangt` / `kein Trust hinterlegt` | 2FA-Setup (oben) noch nicht gelaufen oder Trust abgelaufen |
+| Login-Fehler `503` / "Apple hat die Anmeldung blockiert" | Apple-Cooldown durch zu viele Anmeldeversuche. ~15-60 Min warten, Seite/Code **nicht** spammen. Hintergrund-Refreshes loesen KEINEN Login aus (erst nach erfolgreichem Setup), also nur der manuelle Klick zaehlt |
 | Reminders bleiben leer, kein 2FA-Hinweis | `icloud_apple_id` gesetzt, aber `icloud_apple_password` fehlt |
 | KPIs zeigen Mock-Werte | Live-KPIs brauchen `stripe_secret_key` **und** `app1_api_key` |
 | ESP32 bekommt 403 | `eink_key` gesetzt -> URL braucht `?key=...` |

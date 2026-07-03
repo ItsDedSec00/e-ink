@@ -148,7 +148,7 @@ const server = http.createServer(async (req, res) => {
   // iCloud-2FA-Backend fuer die Web-UI (Login/Code-Validierung ueber die pyicloud-Bridge).
   if (path === '/setup/state' && req.method === 'GET') {
     if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
-    const st = await icloudAuthState({ fresh: url.searchParams.get('fresh') === '1' })
+    const st = await icloudAuthState({ fresh: url.searchParams.get('fresh') === '1', initiate: url.searchParams.get('initiate') === '1' })
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(st)); return
   }
