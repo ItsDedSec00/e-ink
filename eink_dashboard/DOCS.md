@@ -144,11 +144,10 @@ die Option `window_sensors` als komma-getrennte Entity-ID-Liste; die UI-Auswahl 
 Vorrang. Leer -> statischer Platzhalter `eink_windows_open`.)
 
 **3 Buttons:** Die Board-Taster (EE04: KEY0/1/2 an GPIO2/3/5) wecken den ESP32 aus
-dem Deep Sleep. **Taste 0 und 1** melden den Druck ans Add-on, das in HA das Event
-**`eink_dashboard_button`** mit `{ "button": 0|1 }` feuert (fuer Szenen). **Taste 2**
-loest KEIN Event aus, sondern **aktualisiert nur das Panel** (jeder Aufwach-Vorgang
-holt das Bild neu, inkl. LIVE-Fensterstatus) — also ein manueller Refresh-Knopf.
-Beispiel-Automatisierung fuer Taste 0:
+dem Deep Sleep. **Jede** Taste feuert in HA das Event **`eink_dashboard_button`** mit
+`{ "button": 0|1|2 }` (KEY0=0, KEY1=1, KEY2=2) UND aktualisiert dabei das Panel neu
+(jeder Aufwach-Vorgang holt das Bild frisch, inkl. LIVE-Fensterstatus). Ein Druck ist
+also gleichzeitig Szene UND Display-Refresh. Beispiel-Automatisierung fuer Taste 0:
 
 ```yaml
 automation:
@@ -163,9 +162,10 @@ automation:
 ```
 
 (Taste 0 = KEY0/GPIO2, 1 = KEY1/GPIO3, 2 = KEY2/GPIO5.) Ein Druck weckt das Panel,
-holt das Bild neu (Fensterstatus wird bei JEDEM Abruf live geprueft) und meldet bei
-Taste 0/1 das Event (HA reagiert in ~5-10 s, sobald WLAN steht). Voraussetzung: die
-Firmware mit Button-Support ist geflasht.
+meldet das Event (HA reagiert in ~5-10 s, sobald WLAN steht) und holt das Bild neu
+(Fensterstatus wird bei JEDEM Abruf live geprueft). Welche Taste welche Nummer ist,
+zeigt die `[button] N`-Zeile im Add-on-Log. Voraussetzung: die Firmware mit
+Button-Support ist geflasht.
 
 ---
 

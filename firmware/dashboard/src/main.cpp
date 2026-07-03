@@ -394,9 +394,10 @@ void setup() {
 
   configTzTime(TZ_STR, "pool.ntp.org", "time.nist.gov");  // NTP startet im Hintergrund
 
-  // Taste 0/1 -> HA-Event (Szenen); Taste 2 = nur Panel aktualisieren (kein Event -
-  // der Fetch+Render unten ist der Refresh, mit LIVE-Fensterstatus vom Add-on).
-  if (pressedBtn == 0 || pressedBtn == 1) postButton(pressedBtn);
+  // ALLE Tasten feuern das HA-Event (Szenen); der Fetch+Render unten aktualisiert
+  // ohnehin bei JEDEM Aufwachen das Panel (inkl. LIVE-Fensterstatus) — ein Druck ist
+  // also gleichzeitig Szene UND Display-Refresh.
+  if (pressedBtn >= 0) postButton(pressedBtn);
 
   // Bild streamend ins Panel-Buffer dekodieren (bat wurde oben schon gemessen)
   bbep.fillScreen(BBEP_WHITE);
