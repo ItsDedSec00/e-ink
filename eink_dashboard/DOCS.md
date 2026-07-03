@@ -129,6 +129,29 @@ also nach Updates **nicht** erneut gemacht werden.
 
 ---
 
+## Sicherheit
+
+Das Add-on läuft im **Protection-Mode** ohne erhöhte Rechte: kein `host_network`,
+kein `privileged`, kein `full_access`, kein Docker-API-Zugriff, keine
+`hassio_role`. Es bringt ein **AppArmor-Profil** mit (`apparmor.txt`), das dem
+Container nur die von s6-overlay/Node/Python benötigten Rechte lässt und die
+gefährlichen Kernel-/Netz-Capabilities (`SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`,
+`SYS_PTRACE`, `NET_ADMIN`, `NET_RAW`, …) sperrt. Damit erreicht das Add-on das
+**HA-Security-Rating 6/6** (Maximum).
+
+**Wichtiger Resthinweis — der eInk-Port ist bewusst offen:** Damit ein headless
+ESP32 das Bild ziehen kann (der kann die HA-Ingress-Authentifizierung nicht
+durchlaufen), wird TCP **8080 direkt im LAN** exponiert. Dieser Endpunkt ist
+standardmäßig **nicht** authentifiziert. Setze deshalb im Configuration-Tab einen
+`eink_key` (freies Shared Secret) — dann liefert der Server nur bei
+`http://<ha-ip>:8080/eink.bin?key=…` aus und antwortet sonst mit **403**. Den
+gleichen Key trägst du in der ESP32-`secrets.h` (`IMG_URL`) ein. Das Add-on selbst
+speichert oder überträgt keine Daten nach außen außer den von dir konfigurierten
+API-Aufrufen; alle Secrets bleiben in den (maskierten) Add-on-Optionen bzw. in
+`/data`.
+
+---
+
 ## Fehlersuche
 
 | Symptom | Ursache / Fix |

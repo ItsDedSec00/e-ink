@@ -1,5 +1,5 @@
 name: eInk Dashboard Server
-version: "1.0.0"
+version: "1.1.0"
 slug: eink_dashboard
 description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
 url: https://github.com/ItsDedSec00/e-ink
@@ -22,11 +22,9 @@ ports_description:
   "8080/tcp": "eInk-Endpunkt: ESP32 zieht http://<ha-ip>:8080/eink.bin (bzw. /eink.png)"
 
 # --- Persistenz ---
-# /data ist immer vorhanden & persistent (ueberlebt Neustart+Update, im Backup).
-# Reminder-Cache, pyicloud-Session/Trust liegen dort. addon_config nur, falls
-# man Cache-/Session-Dateien zusaetzlich im HA-Dateisystem sehen will.
-map:
-  - addon_config:rw
+# /data ist immer vorhanden & persistent (ueberlebt Neustart+Update, im Backup) und
+# haelt Reminder-Cache + pyicloud-Session/Trust. Bewusst KEIN map: der Renderer
+# braucht keinen Schreibzugriff aufs HA-Dateisystem (Best Practice / hoeheres Rating).
 
 # --- Health-Monitoring: HA prueft den offenen TCP-Port ---
 watchdog: "tcp://[HOST]:[PORT:8080]"

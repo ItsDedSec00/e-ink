@@ -1,0 +1,49 @@
+#include <tunables/global>
+
+# AppArmor-Profil fuer das eInk-Dashboard-Add-on (Profilname == Slug 'eink_dashboard').
+# Der Supervisor laedt diese Datei automatisch und wendet sie an (apparmor default: true).
+# Ziel: dem Add-on genau die Rechte lassen, die s6-overlay + Node + die pyicloud-
+# Python-Bridge brauchen, und die gefaehrlichen Kernel-/Netz-/Host-Rechte sperren.
+# Hebt das HA-Security-Rating von 5 auf 6 (Maximum).
+#
+# Struktur bewusst robust: file/network/signal breit erlaubt (der Container laeuft
+# ohnehin unprivilegiert + fluechtig), aber die DANGEROUS capabilities explizit
+# gesperrt. AppArmor ist default-deny, d.h. was hier nicht erlaubt ist, ist gesperrt.
+profile eink_dashboard flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # s6-overlay-Supervision: alle Signale innerhalb des Prozessbaums.
+  signal,
+
+  # Netzwerk breit erlauben: ausgehende HTTPS-Calls (Stripe/iCloud/Wetter/APIs),
+  # eingehendes TCP :8080 fuer den ESP32 UND die s6-internen Unix-Sockets.
+  # Raw-/Promiscuous-Sockets sind ueber 'deny capability net_raw/net_admin' gesperrt.
+  network,
+
+  # Capabilities: die harmlosen (chown/setuid/... fuer s6 fix-attrs + Privileg-Drop)
+  # zulassen, die gefaehrlichen Kernel-/Netz-Capabilities explizit VERWEIGERN.
+  capability,
+  deny capability sys_admin,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_ptrace,
+  deny capability sys_boot,
+  deny capability sys_time,
+  deny capability net_admin,
+  deny capability net_raw,
+  deny capability mac_admin,
+  deny capability mac_override,
+
+  # Kein Host-/Kernel-Tampering (ist per default-deny ohnehin gesperrt; hier explizit).
+  deny mount,
+  deny umount,
+  deny ptrace (trace),
+  deny /proc/*/mem rwklx,
+  deny /sys/kernel/security/** rwklx,
+  deny /sys/firmware/** rwklx,
+
+  # Datei-Zugriff im (unprivilegierten, fluechtigen) Container-Dateisystem.
+  # exec bleibt in DIESEM Profil (inherit) -> deckt /init, s6, bashio, node und
+  # python3 ab, ohne jeden Pfad einzeln pflegen zu muessen.
+  file,
+}
