@@ -4,7 +4,8 @@ import { config } from './config.mjs'
 import { getEinkData } from './aggregate.mjs'
 import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders } from './sources/reminders.mjs'
-import { SETUP_HTML, icloudAuthState, icloudSubmitCode } from './setup.mjs'
+import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
+import { APP_HTML } from './webui.mjs'
 
 const CACHE_TTL_MS = Number(process.env.EINK_CACHE_TTL || 300) * 1000
 let cache = null    // { png, at, bat }
@@ -16,6 +17,15 @@ function parseBat(url) {
   if (raw == null) return null
   const n = parseInt(raw, 10)
   return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null
+}
+
+// Zugriff erlaubt, wenn: via HA-Ingress (Header X-Ingress-Path -> HA hat den Nutzer
+// bereits authentifiziert) ODER kein eink_key gesetzt ist ODER der Key stimmt. Der
+// ESP32 nutzt den direkten Port mit ?key=…; Menschen kommen ueber das Ingress-Panel.
+function allowed(req, url) {
+  if (req.headers['x-ingress-path'] !== undefined) return true
+  if (!config.einkKey) return true
+  return url.searchParams.get('key') === config.einkKey
 }
 
 // ── Datencache (die teuren Live-Abrufe) — stale-while-revalidate ─────────────
@@ -68,10 +78,16 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/healthz') { res.writeHead(200).end('ok'); return }
 
-  if (req.method === 'GET' && (path === '/eink' || path === '/eink.png' || path === '/')) {
-    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) {
-      res.writeHead(403).end('forbidden'); return
-    }
+  // ── Web-UI (HA-Ingress-Panel in der Seitenleiste): Vorschau + iCloud-Setup + Status ──
+  if (req.method === 'GET' && (path === '/' || path === '/setup')) {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.end(APP_HTML); return
+  }
+
+  // eInk-Bild (Vorschau im UI + direkter Abruf).
+  if (req.method === 'GET' && (path === '/eink' || path === '/eink.png')) {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
     try {
       const png = await renderCached(parseBat(url))
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'Content-Length': png.length })
@@ -85,9 +101,7 @@ const server = http.createServer(async (req, res) => {
 
   // Gepackter 4-Farb-Puffer (96000 Bytes) — der ESP32 streamt ihn direkt ins Panel.
   if (req.method === 'GET' && path === '/eink.bin') {
-    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) {
-      res.writeHead(403).end('forbidden'); return
-    }
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
     try {
       const t0 = Date.now()
       const bin = await renderCachedBin(parseBat(url))
@@ -101,6 +115,29 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Status-JSON fuer die Web-UI (welche Quellen live/mock, Cache-Alter, Reminder-Zahl).
+  if (req.method === 'GET' && path === '/status') {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    const d = dataCache && dataCache.data
+    const status = {
+      mock: d ? Boolean(d._mock) : null,
+      note: (d && d._note) || null,
+      cacheAgeSec: dataCache ? Math.round((Date.now() - dataCache.at) / 1000) : null,
+      reminders: d && Array.isArray(d.reminders) ? d.reminders.length : (d ? 0 : null),
+      sources: {
+        stripe: Boolean(config.stripeKey),
+        app1: Boolean(config.app1.key),
+        app2: Boolean(config.app2.key),
+        calendar: Boolean((config.icloudUser && config.icloudAppPw) || config.icalUrls.length),
+        remindersConfigured: Boolean(config.reminderAppleId),
+      },
+      einkKeySet: Boolean(config.einkKey),
+      port: config.port,
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    res.end(JSON.stringify(status)); return
+  }
+
   // Button -> HA (Platzhalter, bis HA verdrahtet ist)
   if (req.method === 'POST' && path.startsWith('/button/')) {
     const n = path.slice('/button/'.length)
@@ -108,22 +145,15 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(202).end('accepted'); return
   }
 
-  // ── iCloud-2FA-Setup-UI (fuer Reminders; ersetzt docker exec / SSH in den Container) ──
-  // Browser oeffnet /setup -> laedt Status -> bei 2FA Code-Eingabefeld. Gleiches
-  // eink_key-Gate wie /eink, falls gesetzt.
-  if (path === '/setup' && req.method === 'GET') {
-    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-    res.end(SETUP_HTML); return
-  }
+  // iCloud-2FA-Backend fuer die Web-UI (Login/Code-Validierung ueber die pyicloud-Bridge).
   if (path === '/setup/state' && req.method === 'GET') {
-    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
     const st = await icloudAuthState({ fresh: url.searchParams.get('fresh') === '1' })
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(st)); return
   }
   if (path === '/setup/code' && req.method === 'POST') {
-    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
     let body = ''
     req.on('data', c => { body += c; if (body.length > 10000) req.destroy() })
     req.on('end', async () => {
@@ -140,7 +170,7 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(config.port, () => {
-  console.log(`eInk-Renderer läuft auf http://0.0.0.0:${config.port}/eink  (Cache ${CACHE_TTL_MS / 1000}s, Key ${config.einkKey ? 'an' : 'aus'})`)
+  console.log(`eInk-Renderer + Web-UI auf http://0.0.0.0:${config.port}/  (Cache ${CACHE_TTL_MS / 1000}s, Key ${config.einkKey ? 'an' : 'aus'}; UI-Panel via HA-Ingress)`)
   prewarmReminders()                                   // iCloud-Erinnerungen im Hintergrund (~90s)
   refreshData().catch(() => {})                        // Live-Daten vorwaermen -> erster ESP-Abruf schnell
   setInterval(() => refreshData().catch(() => {}), CACHE_TTL_MS)  // im Hintergrund aktuell halten

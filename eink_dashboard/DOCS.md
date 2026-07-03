@@ -92,13 +92,15 @@ den Host gemappt.
 CalDAV-Kalender (`icloud_user`/`icloud_app_pw`) und oeffentliche iCal-Feeds laufen
 sofort. Die **Erinnerungen** gehen ueber pyicloud und brauchen beim ersten Mal
 einen 6-stelligen 2FA-Code (Apple pusht ihn auf deine Geraete). Das geht komplett
-im Browser - **kein SSH / kein `docker exec` noetig**:
+ueber die **Add-on-Weboberflaeche** in der HA-Seitenleiste - kein SSH / kein `docker exec`:
 
 1. Optionen `icloud_apple_id` + `icloud_apple_password` (das **echte** Apple-ID-
    Passwort, nicht das App-spezifische) setzen, Add-on **starten** bzw. neu starten.
-2. Im Browser **`http://<ha-ip>:8080/setup`** oeffnen (mit gesetztem `eink_key`:
-   `…/setup?key=DEIN_KEY`). Die Seite loggt ein -> Apple pusht den Code auf deine
-   Trusted Devices (iPhone/iPad/Mac).
+2. Add-on-Seite -> **"OPEN WEB UI"** (oder das Panel in der HA-Seitenleiste). Im
+   Abschnitt **iCloud-Erinnerungen** loggt sich das Add-on ein -> Apple pusht den
+   Code auf deine Trusted Devices (iPhone/iPad/Mac). Die Oberflaeche ist ueber HA
+   authentifiziert (Ingress) - keine IP/kein Port noetig. Direkt-Alternative:
+   `http://<ha-ip>:8080/` (mit `eink_key`: `…/?key=DEIN_KEY`).
 3. Code eingeben -> **Bestaetigen**. Die Seite ruft `validate_2fa_code()` +
    `trust_session()`; Session + Trust landen in `/data/pyicloud` und **ueberleben
    Neustarts und Add-on-Updates**. Kein Code angekommen? **Neuen Code anfordern**.
@@ -106,11 +108,11 @@ im Browser - **kein SSH / kein `docker exec` noetig**:
    nutzt die getrustete Session. Der Trust-Cookie haelt ~1 Jahr; erst dann ist das
    Setup zu wiederholen.
 
-Die `/setup`-Seite ist bewusst schlank und akzeptiert nur den 6-stelligen Code
-(kein Passwort im Browser). Sie liegt auf demselben Port wie der eInk-Endpunkt - mit
-gesetztem `eink_key` ist sie ebenso hinter dem Key. Der alte Shell-Weg
-(`python3 /usr/lib/reminders-bridge/setup_2fa.py` via `docker exec`) bleibt als
-Fallback fuer Fortgeschrittene erhalten.
+Die Weboberflaeche zeigt ausserdem eine **Live-Vorschau** des gerenderten Panels und
+einen **Status** (welche Quellen live/mock sind). Ueber Ingress ist sie von HA
+authentifiziert; am direkten Port greift - falls gesetzt - der `eink_key`. Der alte
+Shell-Weg (`python3 /usr/lib/reminders-bridge/setup_2fa.py` via `docker exec`) bleibt
+als Fallback fuer Fortgeschrittene erhalten.
 
 ---
 
