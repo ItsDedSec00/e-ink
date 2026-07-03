@@ -48,10 +48,12 @@ _api: PyiCloudService | None = None
 
 # -- Auth / API session --------------------------------------------------------
 
-def get_api() -> PyiCloudService:
-    """Return a logged-in PyiCloudService. Re-uses session if available."""
+def _ensure_service() -> PyiCloudService:
+    """Create (or reuse) the PyiCloudService WITHOUT enforcing 2FA. Raises only on
+    hard errors (missing username/password, login failure). Genutzt vom Render-/
+    Reminder-Pfad (via get_api) UND vom /setup-Web-Flow (op_auth_state/op_submit_2fa)."""
     global _api
-    username = (os.environ.get("ICLOUD_USERNAME") or "").strip()
+    username = (os.environ.get("ICLOUD_USERNAME") or os.environ.get("ICLOUD_APPLE_ID") or "").strip()
     if not username:
         raise RuntimeError("ICLOUD_USERNAME ist nicht gesetzt.")
 
@@ -61,7 +63,7 @@ def get_api() -> PyiCloudService:
         password = (os.environ.get("ICLOUD_APPLE_PASSWORD") or "").strip()
         if not password:
             raise RuntimeError(
-                "needs_reauth: ICLOUD_APPLE_PASSWORD ist leer - "
+                "no_password: ICLOUD_APPLE_PASSWORD ist leer - "
                 "Add-on-Option `icloud_apple_password` setzen."
             )
         # Verzeichnis sicherstellen, damit pyicloud dort schreiben darf.
@@ -81,18 +83,21 @@ def get_api() -> PyiCloudService:
             )
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Auth fehlgeschlagen: {e}") from e
+    return _api
 
-    if _api.requires_2fa:
-        # Trust-Cookie abgelaufen ODER Erst-Login: interaktives 2FA noetig.
-        # Der eInk-Render-Pfad kann das nicht - der Setup-Flow (setup_2fa.py)
-        # muss einmalig laufen. Bis dahin jede op sauber mit needs_reauth
-        # beantworten, damit reminders.mjs sauber auf null faellt.
+
+def get_api() -> PyiCloudService:
+    """Return a logged-in, TRUSTED PyiCloudService fuer den Render-/Reminder-Pfad.
+    Bei fehlendem Trust (Erst-Login/abgelaufen) sauber mit needs_reauth abbrechen,
+    damit reminders.mjs auf null faellt. 2FA richtet der Nutzer ueber die Add-on-
+    Weboberflaeche ein."""
+    api = _ensure_service()
+    if api.requires_2fa:
         raise RuntimeError(
             "needs_reauth: 2FA verlangt - Trust abgelaufen oder Erst-Login. "
-            "2FA-Setup ausfuehren: docker exec -it addon_local_eink_dashboard "
-            "python3 /usr/lib/reminders-bridge/setup_2fa.py"
+            "2FA-Setup ueber die Add-on-Weboberflaeche: http://<ha-ip>:8080/setup"
         )
-    return _api
+    return api
 
 
 # -- CloudKit retry helper -----------------------------------------------------
@@ -325,12 +330,62 @@ def op_delete_reminder(args: dict) -> Any:
     return {"success": True}
 
 
+# -- Auth / 2FA setup (fuer die /setup-Weboberflaeche) -------------------------
+
+def op_auth_state(_args: dict) -> Any:
+    """Status fuer die Setup-UI. Legt beim ersten Aufruf die Session an -> Apple
+    pusht dann den 6-stelligen 2FA-Code auf die Trusted Devices."""
+    try:
+        api = _ensure_service()
+    except RuntimeError as e:
+        msg = str(e)
+        if msg.startswith("no_password"):
+            return {"state": "no_password"}
+        return {"state": "error", "message": msg}
+    if api.requires_2fa:
+        return {"state": "need_code"}
+    trusted = True
+    try:
+        trusted = bool(getattr(api, "is_trusted_session", True))
+    except Exception:  # noqa: BLE001
+        trusted = True
+    return {"state": "authenticated", "trusted": trusted}
+
+
+def op_submit_2fa(args: dict) -> Any:
+    """Validiert den vom Nutzer eingegebenen 6-stelligen Code + setzt Device-Trust."""
+    code = str(args.get("code") or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        return {"error": "Bitte einen 6-stelligen Code eingeben."}
+    try:
+        api = _ensure_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    if api.requires_2fa:
+        try:
+            valid = api.validate_2fa_code(code)
+        except Exception as e:  # noqa: BLE001
+            return {"error": f"Code-Validierung fehlgeschlagen: {e}"}
+        if not valid:
+            return {"error": "Code ungueltig oder abgelaufen. Neuen Code anfordern und erneut versuchen."}
+    # Langlebigen Device-Trust setzen -> kuenftige Neustarts brauchen kein 2FA (~1 Jahr).
+    trusted = True
+    try:
+        if not getattr(api, "is_trusted_session", False):
+            trusted = bool(api.trust_session())
+    except Exception:  # noqa: BLE001
+        trusted = False
+    return {"success": True, "state": "authenticated", "trusted": trusted}
+
+
 OPS: dict[str, Callable[[dict], Any]] = {
     "list_lists": op_list_lists,
     "list_reminders": op_list_reminders,
     "create_reminder": op_create_reminder,
     "complete_reminder": op_complete_reminder,
     "delete_reminder": op_delete_reminder,
+    "auth_state": op_auth_state,
+    "submit_2fa": op_submit_2fa,
 }
 
 

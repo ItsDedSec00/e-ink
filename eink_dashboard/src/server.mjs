@@ -4,6 +4,7 @@ import { config } from './config.mjs'
 import { getEinkData } from './aggregate.mjs'
 import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders } from './sources/reminders.mjs'
+import { SETUP_HTML, icloudAuthState, icloudSubmitCode } from './setup.mjs'
 
 const CACHE_TTL_MS = Number(process.env.EINK_CACHE_TTL || 300) * 1000
 let cache = null    // { png, at, bat }
@@ -105,6 +106,34 @@ const server = http.createServer(async (req, res) => {
     const n = path.slice('/button/'.length)
     console.log(`[button] ${n} gedrückt (HA-Aktion noch nicht verdrahtet)`)
     res.writeHead(202).end('accepted'); return
+  }
+
+  // ── iCloud-2FA-Setup-UI (fuer Reminders; ersetzt docker exec / SSH in den Container) ──
+  // Browser oeffnet /setup -> laedt Status -> bei 2FA Code-Eingabefeld. Gleiches
+  // eink_key-Gate wie /eink, falls gesetzt.
+  if (path === '/setup' && req.method === 'GET') {
+    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.end(SETUP_HTML); return
+  }
+  if (path === '/setup/state' && req.method === 'GET') {
+    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
+    const st = await icloudAuthState({ fresh: url.searchParams.get('fresh') === '1' })
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    res.end(JSON.stringify(st)); return
+  }
+  if (path === '/setup/code' && req.method === 'POST') {
+    if (config.einkKey && url.searchParams.get('key') !== config.einkKey) { res.writeHead(403).end('forbidden'); return }
+    let body = ''
+    req.on('data', c => { body += c; if (body.length > 10000) req.destroy() })
+    req.on('end', async () => {
+      let code = ''
+      try { code = JSON.parse(body).code } catch { code = new URLSearchParams(body).get('code') || '' }
+      const r = await icloudSubmitCode(code)
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      res.end(JSON.stringify(r))
+    })
+    return
   }
 
   res.writeHead(404).end('not found')

@@ -1,5 +1,5 @@
 name: eInk Dashboard Server
-version: "1.1.0"
+version: "1.2.0"
 slug: eink_dashboard
 description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
 url: https://github.com/ItsDedSec00/e-ink

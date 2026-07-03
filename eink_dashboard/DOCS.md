@@ -91,29 +91,26 @@ den Host gemappt.
 
 CalDAV-Kalender (`icloud_user`/`icloud_app_pw`) und oeffentliche iCal-Feeds laufen
 sofort. Die **Erinnerungen** gehen ueber pyicloud und brauchen beim ersten Mal
-einen interaktiven 6-stelligen 2FA-Code (Apple pusht ihn auf deine Geraete). Der
-Render-Pfad ist headless und kann das nicht - deshalb einmalig manuell:
+einen 6-stelligen 2FA-Code (Apple pusht ihn auf deine Geraete). Das geht komplett
+im Browser - **kein SSH / kein `docker exec` noetig**:
 
-1. Optionen `icloud_apple_id` + `icloud_apple_password` setzen, Add-on **starten**.
-   Im Log erscheint `needs_reauth` (erwartet - noch kein Trust in `/data`).
-2. In die laufende Add-on-Shell (via SSH-Add-on / Portainer / `docker exec`):
+1. Optionen `icloud_apple_id` + `icloud_apple_password` (das **echte** Apple-ID-
+   Passwort, nicht das App-spezifische) setzen, Add-on **starten** bzw. neu starten.
+2. Im Browser **`http://<ha-ip>:8080/setup`** oeffnen (mit gesetztem `eink_key`:
+   `…/setup?key=DEIN_KEY`). Die Seite loggt ein -> Apple pusht den Code auf deine
+   Trusted Devices (iPhone/iPad/Mac).
+3. Code eingeben -> **Bestaetigen**. Die Seite ruft `validate_2fa_code()` +
+   `trust_session()`; Session + Trust landen in `/data/pyicloud` und **ueberleben
+   Neustarts und Add-on-Updates**. Kein Code angekommen? **Neuen Code anfordern**.
+4. Fertig ("✅ Eingerichtet"). Der naechste Reminder-Refresh (ein paar Minuten)
+   nutzt die getrustete Session. Der Trust-Cookie haelt ~1 Jahr; erst dann ist das
+   Setup zu wiederholen.
 
-   ```bash
-   docker exec -it addon_local_eink_dashboard \
-       python3 /usr/lib/reminders-bridge/setup_2fa.py
-   ```
-
-   (Container-Name mit `docker ps | grep eink` pruefen, falls abweichend.)
-3. Das Skript loggt ein, Apple pusht den Code, du tippst ihn ein; es ruft
-   `validate_2fa_code()` + `trust_session()`. Session + Trust landen in
-   `/data/pyicloud` und **ueberleben Neustarts und Add-on-Updates**.
-4. Fertig. Der naechste Reminder-Refresh nutzt die getrustete Session. Der
-   Trust-Cookie haelt ~1 Jahr; erst dann ist das Setup zu wiederholen.
-
-**Ohne Shell-Zugang?** Siehe `openQuestions` in der Architektur - ein winziger
-Ingress-Login (HA-authentifiziert, kein offener Port) ist moeglich, erfordert aber
-eine kleine Server-Erweiterung. Der Shell-Weg oben ist bewusst die Standardloesung:
-null zusaetzlicher Code, null Web-Angriffsflaeche, nur ~1x/Jahr noetig.
+Die `/setup`-Seite ist bewusst schlank und akzeptiert nur den 6-stelligen Code
+(kein Passwort im Browser). Sie liegt auf demselben Port wie der eInk-Endpunkt - mit
+gesetztem `eink_key` ist sie ebenso hinter dem Key. Der alte Shell-Weg
+(`python3 /usr/lib/reminders-bridge/setup_2fa.py` via `docker exec`) bleibt als
+Fallback fuer Fortgeschrittene erhalten.
 
 ---
 
