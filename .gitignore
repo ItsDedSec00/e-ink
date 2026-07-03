@@ -7,7 +7,7 @@ firmware/*/src/secrets.h
 
 # ── Persönliche Daten / Render-Ausgaben ──
 # Vorschau-PNGs zeigen echte KPIs/Kalender/Erinnerungen
-/*.png
+*.png
 # iCloud-Reminder-Cache enthält echte Aufgaben-Titel
 .reminders-cache.json
 .reminders-cache*.json

@@ -1,37 +1,51 @@
-# Dashboard-eInk
+# e-ink — Wanddashboard fuer einen batteriebetriebenen ESP32-eInk-Rahmen
 
-800x480-Wanddashboard fuer einen batteriebetriebenen ESP32-eInk-Rahmen.
-Ein Node-Renderer (Satori + resvg) baut das Bild aus Kalender, Wetter, KPIs und
-Apple-Erinnerungen; der ESP32 zieht es periodisch als gepackten 4-Farb-Puffer.
+800x480-Wanddashboard: ein Node-Renderer (Satori + resvg) baut das Bild aus
+Kalender, Wetter, Business-KPIs und Apple-Erinnerungen; ein ESP32-S3 zieht es
+periodisch als gepackten 4-Farb-Puffer (BWRY) und schlaeft zwischen den
+Refreshes tief. Alle Zugangsdaten kommen aus `.env` bzw. den Add-on-Optionen —
+im Repo sind **keine** Secrets oder persoenlichen Daten.
 
-## Zwei Betriebsarten
+## Repo-Struktur
 
-- **Lokal (Windows-PC):** `npm start` -> `src/server.mjs` lauscht auf `:8080`.
-  Konfiguration via `.env` (siehe `.env.example`).
-- **Home Assistant Add-on (Ziel):** Dieses Repo ist zugleich ein lokales
-  HA-Add-on. `config.yaml` + `Dockerfile` im Root paketieren denselben Renderer,
-  mappen die Add-on-Optionen auf die ENV-Variablen und portieren die
-  Apple-Reminder-Bridge nach Linux. **Setup + 2FA: siehe [DOCS.md](DOCS.md).**
+Dieses Repo ist zugleich ein **Home-Assistant-Add-on-Repository**.
 
-## Add-on auf einen Blick
-
-| Datei | Zweck |
+| Pfad | Inhalt |
 |---|---|
-| `config.yaml` | Add-on-Metadaten, Optionen/Schema, Port 8080, /data |
-| `build.yaml` | Per-Arch HA-Debian-Base (amd64 + aarch64) |
-| `Dockerfile` | Base + Node 20 + Python/pyicloud + App (Build-Context = Repo-Root) |
-| `addon/rootfs/etc/services.d/eink/run` | s6-Startskript: Optionen -> ENV -> `node src/server.mjs` |
-| `addon/rootfs/usr/lib/reminders-bridge/bridge.py` | pyicloud-NDJSON-Bridge (Linux/ENV/`/data`) |
-| `addon/rootfs/usr/lib/reminders-bridge/setup_2fa.py` | Einmaliges interaktives iCloud-2FA |
-| `.dockerignore` | haelt `node_modules/`, `firmware/`, `.env`, `*.png` aus dem Image |
+| `repository.yaml` | HA-Repository-Deskriptor (macht das Repo in HA hinzufuegbar) |
+| `eink_dashboard/` | Das HA-Add-on **und** der Node-Renderer (`src/`, `fonts/`, `Dockerfile`, `config.yaml`) |
+| `eink_dashboard/DOCS.md` | Installation auf HA OS, iCloud-2FA, ENV-Referenz, Fehlersuche |
+| `firmware/` | PlatformIO-ESP32-S3-Sketches (`dashboard` = Produktiv, plus Diagnose-Sketches) |
 
-Der Code unter `src/` und `fonts/` bleibt fuer beide Betriebsarten identisch.
+## In Home Assistant installieren
 
-## Endpunkte
+1. **Einstellungen → Add-ons → Add-on-Store → ⋮ (oben rechts) → Repositories**
+2. `https://github.com/ItsDedSec00/e-ink` einfuegen → **Hinzufuegen**.
+3. Das Add-on **„eInk Dashboard Server"** erscheint im Store → installieren.
+4. Konfigurieren + starten: siehe **[eink_dashboard/DOCS.md](eink_dashboard/DOCS.md)**.
 
-- `GET /eink.bin` - gepackter Framebuffer (ESP32)
-- `GET /eink.png` - PNG-Vorschau
-- `GET /healthz` - Health-Check
+Der ESP32 zieht das Bild dann von `http://<ha-ip>:8080/eink.bin`.
 
-Alles Weitere (Installation auf HA OS, iCloud-2FA, ENV-Referenz, Fehlersuche) in
-**[DOCS.md](DOCS.md)**.
+## Lokal ausfuehren (ohne HA)
+
+```bash
+cd eink_dashboard
+cp .env.example .env      # ausfuellen (oder leer lassen -> Mock-Daten)
+npm install
+npm start                 # lauscht auf :8080
+```
+
+Die `.env` wird modul-relativ geladen und daher unabhaengig vom Arbeits-
+verzeichnis gefunden.
+
+### Endpunkte
+
+- `GET /eink.bin` — gepackter Framebuffer (2 Bit/Pixel, 96000 Bytes; fuer den ESP32)
+- `GET /eink.png` — PNG-Vorschau
+- `GET /healthz` — Health-Check
+
+## Firmware
+
+Die ESP32-S3-Firmware liegt unter `firmware/dashboard/`. WLAN-/Renderer-Zugang
+wird aus `firmware/dashboard/src/secrets.h` gelesen — Vorlage:
+`firmware/dashboard/src/secrets.h.example` (kopieren und ausfuellen).

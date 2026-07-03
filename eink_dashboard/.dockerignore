@@ -5,9 +5,6 @@
 # resvg-Prebuilts). Den (Windows-)node_modules NIE hineinkopieren.
 node_modules/
 
-# Firmware (ESP32/PlatformIO) - riesig, irrelevant fuers Server-Image.
-firmware/
-
 # Secrets & lokale Env - kommen zur Laufzeit aus den Add-on-Optionen.
 .env
 .env.*
@@ -31,6 +28,9 @@ fw_check.txt
 DOCS.md
 README.md
 
-# Das Add-on-Overlay wird gezielt via `COPY addon/rootfs /` gezogen; den
-# restlichen addon/-Kram (config.yaml etc.) nicht als App-Layer mitschleppen.
-# (config.yaml/build.yaml/Dockerfile werden vom Supervisor separat gelesen.)
+# rootfs/ wird gezielt via `COPY rootfs /` gezogen -> MUSS im Context bleiben.
+# config.yaml/build.yaml/Dockerfile werden vom Supervisor separat gelesen und
+# nicht ins Image kopiert -> aus dem App-Context ausschliessen.
+config.yaml
+build.yaml
+Dockerfile

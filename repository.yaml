@@ -1,0 +1,7 @@
+# Home-Assistant-Add-on-Repository-Deskriptor.
+# Ohne diese Datei im Repo-Root lehnt der Supervisor das Repo ab
+# ("not a valid add-on repository"). Jedes Add-on liegt in einem eigenen
+# Unterordner mit eigener config.yaml — hier: eink_dashboard/.
+name: eInk Dashboard Add-ons
+url: https://github.com/ItsDedSec00/e-ink
+maintainer: ItsDedSec00 <ItsDedSec00@users.noreply.github.com>

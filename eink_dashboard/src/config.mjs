@@ -1,5 +1,11 @@
 // Zentrale Konfiguration — liest .env. Fehlende Keys sind ok: dann greift der Mock-Fallback.
-import 'dotenv/config'
+// .env wird MODUL-RELATIV geladen (App-Verzeichnis, ein Level ueber src/), damit sie
+// unabhaengig vom Arbeitsverzeichnis gefunden wird (lokal wie im HA-Container; fehlt
+// die Datei, ist es ein No-op und die ENV kommt aus den Add-on-Optionen).
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import dotenv from 'dotenv'
+dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env'), quiet: true })
 
 const env = process.env
 

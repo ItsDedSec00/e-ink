@@ -1,8 +1,7 @@
 # eInk Dashboard Server - HA-Add-on-Image.
 #
-# Build-Context = Repo-Root (damit COPY das unveraenderte src/, fonts/,
-# package.json und package-lock.json sieht). Add-on-spezifische Dateien liegen
-# unter addon/ und werden explizit hereinkopiert.
+# Build-Context = dieses Add-on-Verzeichnis (eink_dashboard/). COPY sieht src/,
+# fonts/, package.json, package-lock.json und rootfs/ direkt daneben.
 #
 # Base: offizielles HA-Debian/glibc-Base. Grund (siehe Recherche R2): resvg
 # liefert zwar auch musl-Prebuilts, aber der glibc/gnu-Pfad ist der am besten
@@ -54,16 +53,16 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # Restlicher App-Code inkl. fonts/ (render.mjs liest fonts/Inter-*.ttf zur
-# Laufzeit relativ zum Modul). .dockerignore haelt firmware/, node_modules,
-# *.png, .env usw. aus dem Context.
+# Laufzeit relativ zum Modul). .dockerignore haelt node_modules, *.png, .env
+# usw. aus dem Context.
 COPY package.json package-lock.json ./
 COPY src ./src
 COPY fonts ./fonts
 
 # ---------------------------------------------------------------------------
-# s6-Service-Tree + Bridge/Setup-Skripte aus addon/rootfs einhaengen.
+# s6-Service-Tree + Bridge/Setup-Skripte aus rootfs/ einhaengen.
 # ---------------------------------------------------------------------------
-COPY addon/rootfs /
+COPY rootfs /
 RUN chmod +x /etc/services.d/eink/run /etc/services.d/eink/finish
 
 # ---------------------------------------------------------------------------
