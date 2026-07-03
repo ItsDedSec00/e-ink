@@ -64,7 +64,9 @@ export const config = {
   haBaseUrl: env.HA_BASE_URL || (env.SUPERVISOR_TOKEN ? 'http://supervisor/core/api' : ''),
   haToken: env.HA_TOKEN || env.SUPERVISOR_TOKEN || '',
   // Fenster-Sensoren: binary_sensor-Entity-IDs, komma-getrennt (offen -> roter Streifen).
+  // Dient als Default; die per Web-UI gespeicherte Auswahl (windowSelectionFile) hat Vorrang.
   windowSensors: (env.WINDOW_SENSORS || '').split(',').map(s => s.trim()).filter(Boolean),
+  windowSelectionFile: env.WINDOW_SELECTION_FILE || (env.DATA_DIR ? `${env.DATA_DIR}/window_sensors.json` : ''),
 
   // Wetter (Open-Meteo, kein Key nötig). Koordinaten optional — sonst wird die Stadt geocodet.
   weatherCity: env.EINK_WEATHER_CITY || 'München',

@@ -84,6 +84,17 @@ export const APP_HTML = `<!doctype html>
     <div class="grid" id="statusGrid"><span class="muted">L&auml;dt &hellip;</span></div>
     <p class="muted" id="espHint" style="margin:14px 0 0"></p>
   </div>
+
+  <div class="card">
+    <h2>FENSTER-SENSOREN</h2>
+    <div id="winStatus"><span class="spin"></span>Lade HA-Sensoren &hellip;</div>
+    <div id="winList" style="display:none; max-height:280px; overflow:auto; margin:6px 0 0"></div>
+    <div class="row" id="winActions" style="display:none; margin-top:12px">
+      <button class="btn" id="winSave" type="button">Auswahl speichern</button>
+      <span class="muted" id="winSaved"></span>
+    </div>
+    <p class="muted" style="margin:12px 0 0">Ausgew&auml;hlte Kontakte f&auml;rben den &bdquo;Fenster&ldquo;-Streifen rot, sobald einer offen ist.</p>
+  </div>
 </div>
 <script>
  var key = new URLSearchParams(location.search).get('key');
@@ -172,6 +183,39 @@ export const APP_HTML = `<!doctype html>
      }).catch(function(e){ remSubmit.disabled=false; setRemMsg('Netzwerkfehler: '+e,'err'); });
  });
 
- refreshPreview(); loadStatus(); loadRem({});
+ // --- Fenster-Sensoren (Auswahl) ---
+ var winStatus=document.getElementById('winStatus'), winList=document.getElementById('winList'),
+     winActions=document.getElementById('winActions'), winSave=document.getElementById('winSave'),
+     winSaved=document.getElementById('winSaved');
+ function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+ function loadWindows(){
+   winStatus.style.display=''; winStatus.innerHTML='<span class="spin"></span>Lade HA-Sensoren …';
+   winList.style.display='none'; winActions.style.display='none';
+   fetch(withParams('windows'), {cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+     if(!d || !Array.isArray(d.candidates)){ winStatus.textContent='HA nicht erreichbar (homeassistant_api aktiv? Add-on neu gestartet?).'; return; }
+     if(!d.candidates.length){ winStatus.textContent='Keine binary_sensor-Entitäten in HA gefunden.'; return; }
+     var sel={}; (d.selected||[]).forEach(function(id){ sel[id]=true; });
+     winStatus.style.display='none';
+     winList.innerHTML = d.candidates.map(function(c){
+       var open = c.open ? ' <span class="pill warn">offen</span>' : '';
+       var dc = c.deviceClass ? ' <span class="muted">('+esc(c.deviceClass)+')</span>' : '';
+       return '<label style="display:flex;align-items:center;gap:9px;padding:6px 2px;cursor:pointer">'
+         + '<input type="checkbox" value="'+esc(c.id)+'"'+(sel[c.id]?' checked':'')+' style="width:18px;height:18px">'
+         + '<span style="flex:1">'+esc(c.name)+dc+open+'</span></label>';
+     }).join('');
+     winList.style.display='block'; winActions.style.display='flex';
+   }).catch(function(e){ winStatus.textContent='Netzwerkfehler: '+e; });
+ }
+ winSave.addEventListener('click', function(){
+   var ids = Array.prototype.slice.call(winList.querySelectorAll('input:checked')).map(function(i){ return i.value; });
+   winSave.disabled=true; winSaved.textContent='Speichere …';
+   fetch(withParams('windows'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:ids})})
+     .then(function(r){return r.json();}).then(function(res){ winSave.disabled=false;
+       winSaved.textContent = (res && res.ok) ? ('Gespeichert ('+(res.selected?res.selected.length:0)+').') : 'Fehler beim Speichern.';
+       refreshPreview(); loadStatus();
+     }).catch(function(e){ winSave.disabled=false; winSaved.textContent='Netzwerkfehler: '+e; });
+ });
+
+ refreshPreview(); loadStatus(); loadRem({}); loadWindows();
 </script>
 </body></html>`

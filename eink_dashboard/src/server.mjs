@@ -6,7 +6,7 @@ import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders, onRemindersRefreshed } from './sources/reminders.mjs'
 import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
 import { APP_HTML } from './webui.mjs'
-import { fireButtonEvent } from './sources/hass.mjs'
+import { fireButtonEvent, getWindowCandidates, readSelectedWindows, saveSelectedWindows } from './sources/hass.mjs'
 
 const CACHE_TTL_MS = Number(process.env.EINK_CACHE_TTL || 300) * 1000
 let cache = null    // { png, at, bat }
@@ -145,6 +145,29 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(status)); return
+  }
+
+  // Fenster-Auswahl (Web-UI): verfuegbare HA-binary_sensors + aktuelle Auswahl / speichern.
+  if (path === '/windows' && req.method === 'GET') {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    const candidates = await getWindowCandidates()
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    res.end(JSON.stringify({ candidates, selected: readSelectedWindows() })); return
+  }
+  if (path === '/windows' && req.method === 'POST') {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    let body = ''
+    req.on('data', c => { body += c; if (body.length > 20000) req.destroy() })
+    req.on('end', () => {
+      let ids = []
+      try { ids = JSON.parse(body).selected } catch { ids = [] }
+      const saved = saveSelectedWindows(ids)
+      cache = null; binCache = null; dataCache = null   // sofort mit neuer Auswahl rendern
+      refreshData().catch(() => {})
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      res.end(JSON.stringify({ ok: true, selected: saved }))
+    })
+    return
   }
 
   // Button (ESP32) -> HA-Event `eink_dashboard_button` { button: N }.

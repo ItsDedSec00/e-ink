@@ -136,11 +136,12 @@ also nach Updates **nicht** erneut gemacht werden.
 Das Add-on spricht die HA-Core-API (`homeassistant_api: true`, automatischer
 `SUPERVISOR_TOKEN`) fuer zwei Dinge:
 
-**Fenster-Streifen:** Unter `window_sensors` eine oder mehrere `binary_sensor`-
-Entity-IDs komma-getrennt eintragen, z.B.
-`binary_sensor.wohnzimmer_fenster,binary_sensor.kueche_fenster`. Ist EINER davon
-offen (`on`), wird der "Fenster"-Streifen unten rot. Leer -> statischer Platzhalter
-`eink_windows_open`.
+**Fenster-Streifen:** Am einfachsten ueber die **Weboberflaeche** (Panel -> Abschnitt
+**Fenster-Sensoren**): dort werden alle `binary_sensor`-Kontakte aus HA als Checkliste
+gezeigt (Fenster-/Tuer-Klassen zuerst) — anhaken, **Auswahl speichern**, fertig. Ist
+EINER der gewaehlten offen (`on`), wird der "Fenster"-Streifen unten rot. (Alternativ
+die Option `window_sensors` als komma-getrennte Entity-ID-Liste; die UI-Auswahl hat
+Vorrang. Leer -> statischer Platzhalter `eink_windows_open`.)
 
 **3 Buttons:** Die Board-Taster (EE04: KEY0/1/2 an GPIO2/3/5) wecken den ESP32 aus
 dem Deep Sleep und melden den Druck ans Add-on, das in HA das Event
