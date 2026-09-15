@@ -1,7 +1,7 @@
 # e-ink — Wanddashboard fuer einen batteriebetriebenen ESP32-eInk-Rahmen
 
 800x480-Wanddashboard: ein Node-Renderer (Satori + resvg) baut das Bild aus
-Kalender, Wetter, Business-KPIs und Apple-Erinnerungen; ein ESP32-S3 zieht es
+Apple-Erinnerungen, Kalender und Wetter; ein ESP32-S3 zieht es
 periodisch als gepackten 4-Farb-Puffer (BWRY) und schlaeft zwischen den
 Refreshes tief. Alle Zugangsdaten kommen aus `.env` bzw. den Add-on-Optionen —
 im Repo sind **keine** Secrets oder persoenlichen Daten.

@@ -10,28 +10,6 @@ dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '.
 const env = process.env
 
 export const config = {
-  // Optionale App-Admin-APIs (Server-Metriken + Nutzerzahlen) fuer bis zu zwei Apps.
-  // URLs + Keys via .env (APP1_*/APP2_*). Ohne Keys werden diese Werte gemockt.
-  app1: {
-    url: env.APP1_API_URL || 'https://your-app.example.com/api/admin/live',
-    key: env.APP1_API_KEY || '',
-  },
-  app2: {
-    url: env.APP2_API_URL || 'https://your-other-app.example.com/api/admin/live',
-    key: env.APP2_API_KEY || '',
-  },
-  // Zahlungs- & Kosten-APIs
-  stripeKey: env.STRIPE_SECRET_KEY || '',
-  veniceKey: env.VENICE_ADMIN_KEY || '',
-  falKey: env.FAL_ADMIN_KEY || '',
-  openrouterKey: env.OPENROUTER_ADMIN_KEY || '',
-  fxFallbackUsdToEur: 0.92,
-  // Kostenzuordnung: welche Cost-Key-/Produktnamen (Substrings, komma-getrennt) App 1
-  // bzw. App 2 zugeschlagen werden — haelt konkrete Produktnamen aus dem Code (via
-  // .env). Leer = keine Zuordnung (solche Kosten fallen in den Bucket 'Others').
-  primaryAppMatch: (env.APP_PRIMARY_MATCH || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
-  secondaryAppMatch: (env.APP_SECONDARY_MATCH || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
-
   // iCloud-Kalender (CalDAV, app-spezifisches Passwort)
   icloudUser: env.ICLOUD_USER || '',
   icloudAppPw: env.ICLOUD_APP_PW || '',
@@ -74,5 +52,10 @@ export const config = {
   weatherLon: env.EINK_LON ? Number(env.EINK_LON) : null,
 }
 
-// True, wenn die KPI-Quellen konfiguriert sind. Sonst Mock-Daten.
-export const hasLiveKpis = Boolean(config.stripeKey && config.app1.key)
+// True, sobald eine Inhaltsquelle konfiguriert ist (iCloud-Kalender, oeffentlicher
+// iCal-Feed oder Apple-Erinnerungen). Sonst laeuft das Panel mit Mock-Daten weiter,
+// damit eine frische Installation nicht leer aussieht. Wetter braucht keinen Key
+// und kommt im Live-Modus automatisch dazu.
+export const hasLiveSources = Boolean(
+  (config.icloudUser && config.icloudAppPw) || config.icalUrls.length || config.reminderAppleId,
+)

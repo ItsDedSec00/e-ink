@@ -117,9 +117,8 @@ export const APP_HTML = `<!doctype html>
      function line(label,html){ return '<div>'+label+'</div><div style="text-align:right">'+html+'</div>'; }
      var rows='';
      rows += line('Daten', s.mock===true ? pill(false,'','Mock-Daten',true) : (s.mock===false ? pill(true,'Live','') : pill(false,'','—')));
-     rows += line('Stripe (Umsatz)', pill(!!src.stripe,'aktiv','—'));
-     rows += line('App 1 (Nutzer/Server)', pill(!!src.app1,'aktiv','—'));
      rows += line('Kalender', pill(!!src.calendar,'aktiv','—'));
+     rows += line('Wetter', pill(!!src.weather,'aktiv','—'));
      rows += line('Erinnerungen', pill(!!src.remindersConfigured,'aktiv','—'));
      if(s.reminders!=null) rows += line('Erinnerungen sichtbar', String(s.reminders));
      if(s.cacheAgeSec!=null) rows += line('Daten-Alter', s.cacheAgeSec+' s');

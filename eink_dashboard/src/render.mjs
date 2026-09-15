@@ -24,6 +24,10 @@ const styled = (dir, props, c) => h('div', { ...props, style: { display: 'flex',
 const row = (props, ...c) => styled('row', props, c)
 const col = (props, ...c) => styled('column', props, c)
 const txt = (style, s) => h('div', { style: { display: 'flex', ...style } }, String(s))
+// Textbox mit display:block. Satori verlangt dafuer, dass children KEIN Array ist
+// (sonst: "Expected <div> to have explicit display: flex") - deshalb hier von Hand
+// statt ueber h(). Nur auf diesem Pfad greift lineClamp (siehe reminderRow).
+const blockTxt = (style, s) => ({ type: 'div', props: { style: { display: 'block', ...style }, children: String(s) } })
 const clip = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s }
 // Emojis entfernen — die Inter-Schrift hat keine Emoji-Glyphen (sonst Tofu-Kaestchen),
 // und auf dem BWRY-Panel sind sie ohnehin nicht sinnvoll darstellbar. Ziffern/Text bleiben.
@@ -37,20 +41,6 @@ const stripEmoji = s => String(s)
 const badge = (text, bg, fg, fontSize = 14) => h('div', {
   style: { display: 'flex', backgroundColor: bg, color: fg, fontSize, fontWeight: 700, padding: '1px 7px', borderRadius: 5 },
 }, String(text))
-// Delta-Anzeige je Ampelstufe: crit = weiss auf Rot, warn = schwarz auf Amber,
-// sonst schlicht schwarze Schrift OHNE Badge (kein Highlight, wenn alles ok).
-const deltaBadge = (text, level) =>
-  level === 'crit' ? badge(text, RED, PAPER)
-  : level === 'warn' ? badge(text, AMBER, INK)
-  : txt({ fontSize: 14, fontWeight: 700, color: INK, paddingLeft: 7 }, text)
-
-// ── Business kompakt: nur Summen (Label + Total + Delta-Badge), keine App-Aufschluesselung ──
-const KPI_TOTAL_W = 66, KPI_DELTA_W = 80
-const kpiRow = k => row({ style: { alignItems: 'center', height: 30 } },
-  txt({ flex: 1, fontSize: 16, fontWeight: 700, color: INK }, k.label),
-  txt({ width: KPI_TOTAL_W, fontSize: 18, fontWeight: 700, color: INK, justifyContent: 'flex-end' }, k.total),
-  h('div', { style: { display: 'flex', width: KPI_DELTA_W, justifyContent: 'flex-start', paddingLeft: 10 } }, deltaBadge(k.delta, k.level)))
-
 // Kleine Akkuanzeige (Icon + %). Rot bei <=15%. Batteriestand kommt vom ESP32.
 const batteryIcon = pct => {
   const p = Math.max(0, Math.min(100, Math.round(pct)))
@@ -62,24 +52,46 @@ const batteryIcon = pct => {
     txt({ fontSize: 11, fontWeight: 700, color: c, marginLeft: 5 }, `${p}%`))
 }
 
-// ── Server-Metrik: ok = schwarze Zahl; warn = schwarz auf Amber; crit = weiss auf Rot ──
-const metricVal = pct => {
-  if (pct <= 50) return txt({ fontSize: 20, fontWeight: 700, color: INK }, `${pct}%`)
-  return pct <= 80 ? badge(`${pct}%`, AMBER, INK, 18) : badge(`${pct}%`, RED, PAPER, 18)
-}
-const metric = (label, pct) => row({ style: { alignItems: 'center', flex: 1 } },
-  txt({ fontSize: 14, fontWeight: 700, color: INK, marginRight: 6 }, label),
-  metricVal(pct))
-
 // ── Erinnerungen: Kreis-Bullet + Titel; ueberfaellig in Rot (Bullet + Schrift) ──
-const REM_MAX = 11   // so viele passen in den Bereich unter der Ueberschrift
-const reminderRow = r => row({ style: { alignItems: 'center', paddingTop: 4, paddingBottom: 4 } },
-  h('div', { style: { display: 'flex', width: 12, height: 12, borderRadius: 6, border: `2px solid ${r.overdue ? RED : INK}`, marginRight: 9, flexShrink: 0 } }),
-  // volle Breite nutzen: einzeilig, am tatsaechlichen Rand mit … abschneiden
-  h('div', { style: { display: 'flex', flex: 1, minWidth: 0, fontSize: 14, fontWeight: r.overdue ? 700 : 400, color: r.overdue ? RED : INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, stripEmoji(r.title)))
+// Seit dem Wegfall des Business-Blocks fuellt die Liste die linke Spalte und darf
+// MEHRZEILIG umbrechen (vorher: eine Zeile, Rest mit … abgeschnitten). Wie viele
+// Eintraege passen, haengt damit von der Textlaenge ab -> Zeilen schaetzen und
+// gegen die verfuegbare Hoehe budgetieren, statt stur N Eintraege zu nehmen.
+const REM_FONT = 14
+const REM_LINE_H = 1.3                       // Zeilenabstand (auch im Style gesetzt)
+const REM_MAX_LINES = 3                      // danach kappt lineClamp mit …
+const REM_ROW_PAD = 8                        // paddingTop + paddingBottom je Eintrag
+const REM_LIST_H = 380                       // Platz unter der Ueberschrift (siehe layout)
+// Textbreite = Spaltenbreite - seitliches Padding (2x18) - Bullet (12) - Abstand (9).
+const REM_TEXT_W = 285 - 36 - 21
+// Inter-Mischtext liegt bei gut der halben Schriftgroesse pro Zeichen; das reicht
+// als Schaetzer fuer den Umbruch (Satori bricht exakt um, wir planen nur den Platz).
+const REM_CHARS_PER_LINE = Math.max(10, Math.floor(REM_TEXT_W / (REM_FONT * 0.52)))
+const remLines = title => Math.min(REM_MAX_LINES, Math.max(1, Math.ceil(String(title).length / REM_CHARS_PER_LINE)))
+const remRowH = lines => REM_ROW_PAD + Math.round(lines * REM_FONT * REM_LINE_H)
+
+const reminderRow = r => row({ style: { alignItems: 'flex-start', paddingTop: 4, paddingBottom: 4 } },
+  // Bullet auf der ersten Zeile ausrichten (marginTop ~ (Zeilenhoehe - Bullet) / 2)
+  h('div', { style: { display: 'flex', width: 12, height: 12, borderRadius: 6, border: `2px solid ${r.overdue ? RED : INK}`, marginRight: 9, marginTop: 3, flexShrink: 0 } }),
+  // Mehrzeilig: display:block + lineClamp kappt nach REM_MAX_LINES Zeilen mit …
+  // (mit display:flex bricht Satori endlos um und ignoriert lineClamp).
+  blockTxt({
+    flex: 1, minWidth: 0, fontSize: REM_FONT, lineHeight: REM_LINE_H,
+    fontWeight: r.overdue ? 700 : 400, color: r.overdue ? RED : INK,
+    lineClamp: REM_MAX_LINES,
+  }, stripEmoji(r.title)))
+
 function renderReminders(rem) {
-  if (!rem || !rem.length) return [txt({ fontSize: 14, color: INK, marginTop: 2 }, 'Nichts fällig heute/morgen')]
-  return rem.slice(0, REM_MAX).map(reminderRow)
+  if (!rem || !rem.length) return [txt({ fontSize: REM_FONT, color: INK, marginTop: 2 }, 'Nichts fällig heute/morgen')]
+  const out = []
+  let used = 0
+  for (const r of rem) {
+    const need = remRowH(remLines(stripEmoji(r.title)))
+    if (out.length && used + need > REM_LIST_H) break   // mind. ein Eintrag, dann nach Platz
+    used += need
+    out.push(reminderRow(r))
+  }
+  return out
 }
 
 // ── Fenster-Status: flacher Streifen, weiss (zu) / komplett rot (offen).
@@ -178,18 +190,15 @@ function layout(d) {
   const win = d.windows || { open: false }
   return row({ style: { width: 800, height: 480, backgroundColor: PAPER, fontFamily: 'Inter', color: INK } },
     // LINKE Spalte: schmaler, damit rechts 3 Kalendertage komfortabel passen.
-    // Kein Datum-Kopf (steht im Kalender), keine Server-Stats (nicht live).
+    // Kein Datum-Kopf (steht im Kalender), keine Business-KPIs mehr.
     col({ style: { width: 285, borderRight: `2px solid ${INK}` } },
-      // Business (nur Summen) — Ueberschrift links, Akkuanzeige rechts in der Ecke
-      col({ style: { padding: '14px 16px 10px' } },
-        row({ style: { alignItems: 'center', marginBottom: 6 } },
-          txt({ fontSize: 12, fontWeight: 700, color: INK, letterSpacing: 2, flex: 1 }, 'BUSINESS'),
+      // Erinnerungen ganz oben (der Business-Block ist entfallen) und ueber die
+      // volle Spaltenhoehe: Ueberschrift links, Akkuanzeige rechts in der Ecke.
+      // Ueberlauf geklippt, damit nichts in den Fenster-Streifen rutscht.
+      col({ style: { padding: '14px 18px 10px', flex: 1, overflow: 'hidden' } },
+        row({ style: { alignItems: 'center', marginBottom: 10 } },
+          txt({ fontSize: 12, fontWeight: 700, color: INK, letterSpacing: 2, flex: 1 }, 'ERINNERUNGEN'),
           d.battery != null ? batteryIcon(d.battery) : false),
-        ...d.kpis.map(kpiRow)),
-      // Erinnerungen: Ueberschrift + klar darunter beginnende Liste (Ueberlauf geklippt,
-      // damit nichts vor die Ueberschrift rutscht); nur so viele wie Platz.
-      col({ style: { borderTop: `2px solid ${INK}`, padding: '10px 18px', flex: 1, overflow: 'hidden' } },
-        txt({ fontSize: 12, fontWeight: 700, color: INK, letterSpacing: 2, marginBottom: 12 }, 'ERINNERUNGEN'),
         col({ style: { flex: 1, overflow: 'hidden' } }, ...renderReminders(d.reminders))),
       // Fenster-Streifen (unten, ueber die volle Breite eingefaerbt)
       fensterStrip(win.open, d.header.temp)),

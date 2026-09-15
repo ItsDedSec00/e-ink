@@ -1,6 +1,6 @@
 # eInk Dashboard Server
 
-Rendert das 800x480-Dashboard (Kalender, Wetter, KPIs, Apple-Erinnerungen) und
+Rendert das 800x480-Dashboard (Apple-Erinnerungen, Kalender, Wetter) und
 liefert es an den batteriebetriebenen ESP32-eInk-Rahmen im LAN. Der Node-Renderer
 aus `src/` laeuft dabei **unveraendert** im Container; dieses Add-on paketiert ihn
 nur, mappt die Optionen auf die erwarteten ENV-Variablen und portiert die
@@ -47,15 +47,12 @@ aarch64-Emulation).
 
 ### 3. Konfigurieren
 
-Tab **Configuration**. Alles ist optional - ohne Keys laufen die betroffenen
-Kacheln mit Mock-Daten. Sinnvolles Minimum:
+Tab **Configuration**. Alles ist optional - ohne Kalender-/Erinnerungs-Zugang
+laeuft das Panel mit Mock-Daten. Sinnvolles Minimum:
 
 ```yaml
 eink_tz: Europe/Berlin
 eink_weather_city: München
-# Live-KPIs brauchen BEIDES (stripe + App-1-Admin-API):
-stripe_secret_key: sk_live_...
-app1_api_key: ...
 # iCloud-Kalender (CalDAV, app-spezifisches Passwort von appleid.apple.com):
 icloud_user: du@icloud.com
 icloud_app_pw: xxxx-xxxx-xxxx-xxxx
@@ -229,7 +226,7 @@ API-Aufrufen; alle Secrets bleiben in den (maskierten) Add-on-Optionen bzw. in
 | `You must accept the updated terms of service` / "Apple verlangt die Zustimmung zu den aktualisierten iCloud-Nutzungsbedingungen" | Apple hat neue iCloud-Bedingungen. In der Weboberflaeche **"Bedingungen bestaetigen & fortfahren"** klicken (oder `icloud_accept_terms: true` setzen bzw. auf `icloud.com` bestaetigen) |
 | Login-Fehler `503` / "Apple hat die Anmeldung blockiert" | Apple-Cooldown durch zu viele Anmeldeversuche. ~15-60 Min warten, Seite/Code **nicht** spammen. Hintergrund-Refreshes loesen KEINEN Login aus (erst nach erfolgreichem Setup), also nur der manuelle Klick zaehlt |
 | Reminders bleiben leer, kein 2FA-Hinweis | `icloud_apple_id` gesetzt, aber `icloud_apple_password` fehlt |
-| KPIs zeigen Mock-Werte | Live-KPIs brauchen `stripe_secret_key` **und** `app1_api_key` |
+| Panel zeigt Mock-Daten | Live-Betrieb braucht mindestens eine Inhaltsquelle: iCloud-Kalender (`icloud_user` + `icloud_app_pw`), `ical_urls` oder Erinnerungen (`icloud_apple_id`) |
 | ESP32 bekommt 403 | `eink_key` gesetzt -> URL braucht `?key=...` |
 | Build bricht bei `npm ci` | `package-lock.json` fehlt im Ordner, oder `node_modules/` wurde mitkopiert |
 | Kalender leer | `icloud_calendars` muss die **Anzeigenamen** treffen; app-spezifisches PW pruefen |

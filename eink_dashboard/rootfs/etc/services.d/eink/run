@@ -48,20 +48,6 @@ export_if_set 'eink_lat'          'EINK_LAT'
 export_if_set 'eink_lon'          'EINK_LON'
 
 # ---------------------------------------------------------------------------
-# KPI-/Kosten-APIs (alle optional -> ohne sie greift der Mock-Fallback)
-# ---------------------------------------------------------------------------
-export_if_set 'app1_api_key'         'APP1_API_KEY'
-export_if_set 'app1_api_url'         'APP1_API_URL'
-export_if_set 'app2_api_key'         'APP2_API_KEY'
-export_if_set 'app2_api_url'         'APP2_API_URL'
-export_if_set 'app_primary_match'    'APP_PRIMARY_MATCH'
-export_if_set 'app_secondary_match'  'APP_SECONDARY_MATCH'
-export_if_set 'stripe_secret_key'    'STRIPE_SECRET_KEY'
-export_if_set 'venice_admin_key'     'VENICE_ADMIN_KEY'
-export_if_set 'fal_admin_key'        'FAL_ADMIN_KEY'
-export_if_set 'openrouter_admin_key' 'OPENROUTER_ADMIN_KEY'
-
-# ---------------------------------------------------------------------------
 # iCloud-Kalender (CalDAV, app-spezifisches Passwort) + oeffentliche iCal-Feeds
 # ---------------------------------------------------------------------------
 export_if_set 'icloud_user'       'ICLOUD_USER'
@@ -113,7 +99,7 @@ if bashio::config.has_value 'icloud_apple_id' || bashio::config.has_value 'iclou
     bashio::log.warning "Apple-ID gesetzt, aber icloud_apple_password fehlt -> Reminders bleiben leer."
   fi
 else
-  bashio::log.info "Keine Apple-ID gesetzt -> Reminders deaktiviert (Kalender/KPIs laufen unabhaengig)."
+  bashio::log.info "Keine Apple-ID gesetzt -> Reminders deaktiviert (Kalender/Wetter laufen unabhaengig)."
 fi
 
 # exec -> Node erbt PID 1 des Service-Trees + die ENV; s6 ueberwacht den Prozess.

@@ -144,10 +144,8 @@ const server = http.createServer(async (req, res) => {
       cacheAgeSec: dataCache ? Math.round((Date.now() - dataCache.at) / 1000) : null,
       reminders: d && Array.isArray(d.reminders) ? d.reminders.length : (d ? 0 : null),
       sources: {
-        stripe: Boolean(config.stripeKey),
-        app1: Boolean(config.app1.key),
-        app2: Boolean(config.app2.key),
         calendar: Boolean((config.icloudUser && config.icloudAppPw) || config.icalUrls.length),
+        weather: true,   // Open-Meteo braucht keinen Key
         remindersConfigured: Boolean(config.reminderAppleId),
       },
       einkKeySet: Boolean(config.einkKey),

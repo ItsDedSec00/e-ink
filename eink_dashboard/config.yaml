@@ -1,7 +1,7 @@
 name: eInk Dashboard Server
-version: "1.8.0"
+version: "2.0.0"
 slug: eink_dashboard
-description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
+description: Rendert das eInk-Framebuffer (Erinnerungen, Kalender, Wetter) und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
 url: https://github.com/ItsDedSec00/e-ink
 # 2026: nur aarch64 + amd64 (resvg-Prebuilts existieren nur dafuer; armv7/i386 raus)
 arch:
@@ -68,17 +68,6 @@ schema:
   eink_weather_city: "str?"
   eink_lat: "float?"
   eink_lon: "float?"
-  # KPI-/Kosten-APIs
-  app1_api_key: "password?"
-  app1_api_url: "url?"
-  app2_api_key: "password?"
-  app2_api_url: "url?"
-  app_primary_match: "str?"
-  app_secondary_match: "str?"
-  stripe_secret_key: "password?"
-  venice_admin_key: "password?"
-  fal_admin_key: "password?"
-  openrouter_admin_key: "password?"
   # iCloud-Kalender (CalDAV, app-spezifisches Passwort) + oeffentliche Feeds
   icloud_user: "email?"
   icloud_app_pw: "password?"
