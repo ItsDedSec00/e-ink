@@ -64,6 +64,9 @@ icloud_calendars: "Familie,Privat"
 icloud_apple_id: du@icloud.com
 icloud_apple_password: dein-apple-id-passwort
 icloud_reminder_lists: "Einkaufen,Haushalt"
+# Optional: aktualisierte iCloud-Nutzungsbedingungen ohne Rueckfrage bestaetigen
+# (Standard false -> die Weboberflaeche fragt nach, siehe unten):
+icloud_accept_terms: false
 ```
 
 Danach **Start**. Logs im Tab **Log** (Live-stdout des Node-Servers), oder CLI:
@@ -111,6 +114,31 @@ ueber die **Add-on-Weboberflaeche** in der HA-Seitenleiste - kein SSH / kein `do
    nutzt die getrustete Session. Der Trust-Cookie haelt ~1 Jahr; erst dann ist das
    Setup zu wiederholen.
 
+### Apple verlangt neue Nutzungsbedingungen
+
+Apple aktualisiert gelegentlich die iCloud-Web-Bedingungen und blockiert bis zur
+Zustimmung jede Anmeldung. pyicloud meldet das als
+`You must accept the updated terms of service to continue. Set --accept-terms to
+accept them.` - das ist **kein** Passwort- oder Code-Fehler.
+
+Die Weboberflaeche zeigt dafuer den Zustand **"Apple hat die iCloud-Nutzungs-
+bedingungen aktualisiert"** samt Button **"Bedingungen bestaetigen & fortfahren"**.
+Das Add-on stimmt **nie von selbst** zu - erst dieser Klick bestaetigt sie in deinem
+Namen, danach laeuft der Login normal weiter (ggf. mit 2FA-Code). Wer sie vorher
+lesen will: auf `icloud.com` im Browser anmelden, dort steht derselbe Dialog -
+bestaetigst du ihn da, erledigt sich der Hinweis im Add-on von selbst.
+
+Die Zustimmung wird als `/data/pyicloud/.terms-accepted` gemerkt, damit die
+kurzlebigen Hintergrund-Refreshes nicht erneut haengenbleiben. Zuruecknehmen:
+Link **"Zustimmung zuruecknehmen"** im Abschnitt iCloud-Erinnerungen (sichtbar,
+sobald eingerichtet).
+
+Ohne Weboberflaeche geht es auch:
+
+- Add-on-Option `icloud_accept_terms: true` (bzw. `ICLOUD_ACCEPT_TERMS=true` in der
+  `.env` beim lokalen Betrieb) - bestaetigt kuenftige Bedingungen automatisch.
+- `python3 /usr/lib/reminders-bridge/setup_2fa.py --accept-terms` via `docker exec`.
+
 Die Weboberflaeche zeigt ausserdem eine **Live-Vorschau** des gerenderten Panels und
 einen **Status** (welche Quellen live/mock sind). Ueber Ingress ist sie von HA
 authentifiziert; am direkten Port greift - falls gesetzt - der `eink_key`. Der alte
@@ -124,6 +152,7 @@ als Fallback fuer Fortgeschrittene erhalten.
 Alles Zustandsbehaftete liegt in `/data` (im HA-Backup enthalten):
 
 - `/data/pyicloud/…session` - iCloud-Session + Trust-Token
+- `/data/pyicloud/.terms-accepted` - Zustimmung zu Apples aktualisierten Bedingungen
 - `/data/.reminders-cache.json` - letzter Reminder-Stand (sofort warm nach Neustart)
 
 Ein Add-on-Update baut das Image neu, laesst `/data` aber unangetastet - 2FA muss
@@ -197,6 +226,7 @@ API-Aufrufen; alle Secrets bleiben in den (maskierten) Add-on-Optionen bzw. in
 | Symptom | Ursache / Fix |
 |---|---|
 | Log: `needs_reauth: 2FA verlangt` / `kein Trust hinterlegt` | 2FA-Setup (oben) noch nicht gelaufen oder Trust abgelaufen |
+| `You must accept the updated terms of service` / "Apple verlangt die Zustimmung zu den aktualisierten iCloud-Nutzungsbedingungen" | Apple hat neue iCloud-Bedingungen. In der Weboberflaeche **"Bedingungen bestaetigen & fortfahren"** klicken (oder `icloud_accept_terms: true` setzen bzw. auf `icloud.com` bestaetigen) |
 | Login-Fehler `503` / "Apple hat die Anmeldung blockiert" | Apple-Cooldown durch zu viele Anmeldeversuche. ~15-60 Min warten, Seite/Code **nicht** spammen. Hintergrund-Refreshes loesen KEINEN Login aus (erst nach erfolgreichem Setup), also nur der manuelle Klick zaehlt |
 | Reminders bleiben leer, kein 2FA-Hinweis | `icloud_apple_id` gesetzt, aber `icloud_apple_password` fehlt |
 | KPIs zeigen Mock-Werte | Live-KPIs brauchen `stripe_secret_key` **und** `app1_api_key` |

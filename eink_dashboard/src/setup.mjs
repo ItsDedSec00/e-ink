@@ -70,6 +70,20 @@ export async function icloudAuthState({ fresh = false, initiate = false } = {}) 
   return resp.result || { state: 'error', message: 'Keine Antwort der Bridge.' }
 }
 
+// POST /setup/terms  ->  { ok, state, ... } | { ok:false, message }
+// Apple verlangt gelegentlich die Bestaetigung aktualisierter iCloud-Web-Bedingungen.
+// Das ist eine Zustimmung im Namen des Nutzers -> passiert NUR auf diesen Klick.
+// revoke=true nimmt die gespeicherte Zustimmung wieder zurueck.
+export async function icloudAcceptTerms({ revoke = false } = {}) {
+  const resp = await sendOp('accept_terms', { revoke })
+  if (resp.error) return { ok: false, message: humanError(resp.error) }
+  const r = resp.result || {}
+  if (r.state === 'authenticated') {
+    try { refreshRemindersNow() } catch { /* egal */ }   // Erinnerungen sofort nachladen
+  }
+  return { ok: true, ...r }
+}
+
 // POST /setup/code  ->  { ok, trusted } | { ok:false, message }
 export async function icloudSubmitCode(code) {
   const resp = await sendOp('submit_2fa', { code: String(code || '') })
@@ -83,6 +97,9 @@ export async function icloudSubmitCode(code) {
 }
 
 function humanError(err) {
+  const s = String(err)
+  // Die Bridge praefixt den Terms-Fall, damit er nicht als Login-Fehler wirkt.
+  if (s.startsWith('terms_required:')) return s.slice('terms_required:'.length).trim()
   if (err === 'bridge_not_configured') return 'Reminder-Bridge nicht konfiguriert (Apple-ID/Passwort in den Add-on-Optionen setzen und neu starten).'
   if (err === 'timeout') return 'Zeitueberschreitung bei der Verbindung zu iCloud. Nochmal versuchen.'
   if (err === 'bridge_closed' || err === 'spawn_failed' || err === 'write_failed') return 'Interner Bridge-Fehler. Add-on-Log pruefen.'

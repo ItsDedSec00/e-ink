@@ -68,6 +68,7 @@ export const APP_HTML = `<!doctype html>
     <h2>iCLOUD-ERINNERUNGEN</h2>
     <div id="remStatus"><span class="spin"></span>Pr&uuml;fe Status &hellip;</div>
     <button class="btn" id="remSignin" type="button" style="display:none;margin-top:12px">Mit iCloud anmelden &amp; Code anfordern</button>
+    <button class="btn" id="remTerms" type="button" style="display:none;margin-top:12px">Bedingungen best&auml;tigen &amp; fortfahren</button>
     <form id="remForm" style="display:none">
       <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="000000" aria-label="6-stelliger Code">
       <div class="row">
@@ -76,6 +77,7 @@ export const APP_HTML = `<!doctype html>
       </div>
     </form>
     <div id="remMsg" class="msg"></div>
+    <p class="muted" id="remTermsHint" style="margin:12px 0 0;display:none">Mit dem Klick best&auml;tigt das Add-on Apples aktualisierte iCloud-Web-Bedingungen <b>in deinem Namen</b>. Lesen (und alternativ dort best&auml;tigen) kannst du sie im Browser auf <code>icloud.com</code>. Die Zustimmung wird in <code>/data</code> gemerkt, damit die Hintergrund-Aktualisierung nicht erneut blockiert &ndash; du kannst sie danach jederzeit zur&uuml;cknehmen.</p>
     <p class="muted" id="remHint" style="margin:12px 0 0;display:none">Apple sendet den Code an deine Trusted Devices. <b>Nicht mehrfach hintereinander anfordern</b> &ndash; zu viele Versuche l&ouml;sen einen Apple-Cooldown (503) aus.</p>
   </div>
 
@@ -133,13 +135,16 @@ export const APP_HTML = `<!doctype html>
  var remStatus=document.getElementById('remStatus'), remForm=document.getElementById('remForm'),
      codeEl=document.getElementById('code'), remMsg=document.getElementById('remMsg'),
      remSubmit=document.getElementById('remSubmit'), remResend=document.getElementById('remResend'),
-     remSignin=document.getElementById('remSignin'), remHint=document.getElementById('remHint');
+     remSignin=document.getElementById('remSignin'), remHint=document.getElementById('remHint'),
+     remTerms=document.getElementById('remTerms'), remTermsHint=document.getElementById('remTermsHint');
  var remBusy=false;
  function setRemMsg(t,cls){ remMsg.textContent=t||''; remMsg.className='msg '+(cls||''); }
- function showRem(which){ // 'idle' | 'code' | 'none'
+ function showRem(which){ // 'idle' | 'terms' | 'code' | 'none'
    remSignin.style.display = which==='idle' ? 'inline-block' : 'none';
+   remTerms.style.display  = which==='terms' ? 'inline-block' : 'none';
    remForm.style.display   = which==='code' ? 'block' : 'none';
    remHint.style.display   = (which==='idle'||which==='code') ? 'block' : 'none';
+   remTermsHint.style.display = which==='terms' ? 'block' : 'none';
  }
  function renderRem(st){
    if(!st){ remStatus.textContent='Keine Antwort vom Server.'; showRem('none'); return; }
@@ -149,9 +154,15 @@ export const APP_HTML = `<!doctype html>
    } else if(st.state==='need_code'){
      remStatus.innerHTML='Ein <b>6-stelliger Code</b> wurde an deine Apple-Ger&auml;te gesendet. Gib ihn ein.';
      showRem('code'); codeEl.value=''; codeEl.focus();
+   } else if(st.state==='terms_required'){
+     remStatus.innerHTML='Apple hat die <b>iCloud-Nutzungsbedingungen aktualisiert</b> und verlangt die Zustimmung, bevor die Anmeldung weitergeht. Das ist <b>kein</b> Passwort-/Code-Fehler.';
+     showRem('terms');
    } else if(st.state==='authenticated'){
      var extra = st.trusted===false ? ' <span style="color:#d11">(Device-Trust nicht gesetzt.)</span>' : '';
-     remStatus.innerHTML='✅ <b>Eingerichtet.</b> Erinnerungen erscheinen nach dem n&auml;chsten Refresh.'+extra;
+     var termsLine = st.terms_accepted ? '<div class="muted" id="termsLine" style="margin-top:8px">Apple-Nutzungsbedingungen werden in deinem Namen best&auml;tigt. <a href="#" id="termsRevoke">Zustimmung zur&uuml;cknehmen</a></div>' : '';
+     remStatus.innerHTML='✅ <b>Eingerichtet.</b> Erinnerungen erscheinen nach dem n&auml;chsten Refresh.'+extra+termsLine;
+     var rv=document.getElementById('termsRevoke');
+     if(rv) rv.addEventListener('click', function(ev){ ev.preventDefault(); postTerms(true); });
      showRem('none');
    } else if(st.state==='no_password'){
      remStatus.innerHTML='Bitte im <b>Configuration</b>-Tab <code>icloud_apple_id</code> + <code>icloud_apple_password</code> setzen, Add-on neu starten, dann diese Seite neu laden.';
@@ -171,6 +182,24 @@ export const APP_HTML = `<!doctype html>
      .then(function(st){ remBusy=false; remSignin.disabled=false; remResend.disabled=false; renderRem(st); })
      .catch(function(e){ remBusy=false; remSignin.disabled=false; remResend.disabled=false; remStatus.textContent='Netzwerkfehler: '+e; });
  }
+ // Bedingungen bestaetigen (revoke=true nimmt die Zustimmung wieder zurueck). Passiert
+ // NUR auf diesen Klick - das Add-on stimmt nie von selbst zu.
+ function postTerms(revoke){
+   remTerms.disabled=true;
+   setRemMsg(revoke ? 'Nehme Zustimmung zurück …' : 'Bestätige die Bedingungen bei Apple …','');
+   fetch(withParams('setup/terms'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revoke:!!revoke})})
+     .then(function(r){return r.json();}).then(function(res){ remTerms.disabled=false;
+       if(!res || !res.ok){ setRemMsg((res&&res.message)||'Bestätigung fehlgeschlagen.','err'); return; }
+       if(revoke){
+         var line=document.getElementById('termsLine');
+         if(res.terms_accepted){ setRemMsg(res.message||'Zustimmung bleibt aktiv (Add-on-Option).',''); }
+         else { if(line) line.style.display='none'; setRemMsg('Zustimmung zurückgenommen.',''); }
+         return;
+       }
+       setRemMsg(''); renderRem(res); loadStatus();
+     }).catch(function(e){ remTerms.disabled=false; setRemMsg('Netzwerkfehler: '+e,'err'); });
+ }
+ remTerms.addEventListener('click', function(){ postTerms(false); });
  remSignin.addEventListener('click', function(){ loadRem({initiate:true}); });
  remResend.addEventListener('click', function(){ loadRem({initiate:true, fresh:true}); });
  remForm.addEventListener('submit', function(ev){ ev.preventDefault();
@@ -178,7 +207,7 @@ export const APP_HTML = `<!doctype html>
    setRemMsg('Prüfe Code …',''); remSubmit.disabled=true;
    fetch(withParams('setup/code'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
      .then(function(r){return r.json();}).then(function(res){ remSubmit.disabled=false;
-       if(res.ok){ setRemMsg(''); renderRem({state:'authenticated',trusted:res.trusted}); loadStatus(); }
+       if(res.ok){ setRemMsg(''); renderRem({state:'authenticated',trusted:res.trusted,terms_accepted:res.terms_accepted}); loadStatus(); }
        else setRemMsg(res.message||'Code abgelehnt.','err');
      }).catch(function(e){ remSubmit.disabled=false; setRemMsg('Netzwerkfehler: '+e,'err'); });
  });

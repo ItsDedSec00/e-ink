@@ -17,6 +17,7 @@ der Node-Server startet.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -36,6 +37,21 @@ for _stream in (sys.stdout, sys.stderr, sys.stdin):
 from pyicloud import PyiCloudService
 from pyicloud.exceptions import PyiCloudAPIResponseException
 
+try:
+    # pyicloud >= 2.6: eigene Exception, wenn Apple aktualisierte iCloud-Web-
+    # Nutzungsbedingungen verlangt (termsUpdateNeeded).
+    from pyicloud.exceptions import PyiCloudAcceptTermsException
+except ImportError:  # aeltere pyicloud-Versionen kennen sie nicht
+    class PyiCloudAcceptTermsException(Exception):  # type: ignore[no-redef]
+        """Platzhalter - wird von dieser pyicloud-Version nie geworfen."""
+
+# Der Konstruktor-Parameter accept_terms existiert erst ab pyicloud 2.6. Signatur
+# pruefen statt TypeError abzufangen (TypeError kaeme sonst auch aus Apple-Code).
+try:
+    _SUPPORTS_ACCEPT_TERMS = "accept_terms" in inspect.signature(PyiCloudService).parameters
+except (TypeError, ValueError):  # pragma: no cover - defensiv
+    _SUPPORTS_ACCEPT_TERMS = False
+
 MAX_INDEX_RETRIES = 6
 DEFAULT_BACKOFF_S = 35
 
@@ -44,6 +60,58 @@ DEFAULT_BACKOFF_S = 35
 COOKIE_DIR = os.environ.get("ICLOUD_COOKIE_DIR", "/data/pyicloud")
 
 _api: PyiCloudService | None = None
+
+
+# -- Apple-Nutzungsbedingungen -------------------------------------------------
+# Apple kann bei der Anmeldung verlangen, dass aktualisierte iCloud-Web-Bedingungen
+# bestaetigt werden (accountLogin liefert dann `termsUpdateNeeded`). pyicloud
+# akzeptiert sie NUR mit accept_terms=True - sonst fliegt PyiCloudAcceptTermsException.
+# Das ist eine Zustimmung im Namen des Nutzers, deshalb NIE automatisch: erst nach
+# einem Klick in der Add-on-Weboberflaeche (schreibt den Marker unten) oder wenn die
+# Add-on-Option `icloud_accept_terms` (ENV ICLOUD_ACCEPT_TERMS) gesetzt ist.
+
+def _terms_marker() -> str:
+    return os.path.join(COOKIE_DIR, ".terms-accepted")
+
+
+def _terms_env_optin() -> bool:
+    return (os.environ.get("ICLOUD_ACCEPT_TERMS") or "").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+
+
+def _terms_accepted() -> bool:
+    """Hat der Nutzer zugestimmt, dass wir Apples Bedingungen bestaetigen duerfen?
+    Der Marker liegt in /data und gilt deshalb auch fuer die kurzlebigen Bridge-
+    Prozesse des Hintergrund-Refresh."""
+    return _terms_env_optin() or os.path.exists(_terms_marker())
+
+
+def _mark_terms_accepted() -> None:
+    try:
+        os.makedirs(COOKIE_DIR, mode=0o700, exist_ok=True)
+        with open(_terms_marker(), "w", encoding="utf-8") as f:
+            f.write(datetime.now().isoformat(timespec="seconds") + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clear_terms_accepted() -> None:
+    try:
+        os.remove(_terms_marker())
+    except FileNotFoundError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _is_terms_error(e: BaseException) -> bool:
+    """Erkennt Apples "Bedingungen bestaetigen"-Fehler auch dann, wenn ihn eine
+    aeltere pyicloud-Version als generische Exception durchreicht."""
+    if isinstance(e, PyiCloudAcceptTermsException):
+        return True
+    msg = str(e).lower()
+    return "terms of service" in msg or "accept-terms" in msg or "termsupdateneeded" in msg
 
 
 # -- Auth / API session --------------------------------------------------------
@@ -76,13 +144,23 @@ def _ensure_service() -> PyiCloudService:
             # {COOKIE_DIR}/{sanitized_apple_id}.session und bleiben ueber
             # Neustarts erhalten. Ohne dieses Argument schreibt pyicloud nach
             # tempdir und verliert alles beim Container-Restart.
-            _api = PyiCloudService(
-                username,
-                password,
-                cookie_directory=COOKIE_DIR,
-            )
+            kwargs: dict[str, Any] = {"cookie_directory": COOKIE_DIR}
+            if _SUPPORTS_ACCEPT_TERMS:
+                # Nur True, wenn der Nutzer zugestimmt hat (Marker/Option) - sonst
+                # bricht pyicloud bei aktualisierten Bedingungen bewusst ab und wir
+                # fragen in der Weboberflaeche nach.
+                kwargs["accept_terms"] = _terms_accepted()
+            _api = PyiCloudService(username, password, **kwargs)
         except Exception as e:  # noqa: BLE001
             msg = str(e)
+            if _is_terms_error(e):
+                # Kein Login-/Passwortfehler: Apple will nur die Bestaetigung der
+                # aktualisierten iCloud-Bedingungen. op_auth_state macht daraus den
+                # Zustand `terms_required`, die Weboberflaeche einen Button.
+                raise RuntimeError(
+                    "terms_required: Apple verlangt die Zustimmung zu den "
+                    "aktualisierten iCloud-Nutzungsbedingungen."
+                ) from e
             if "503" in msg or "Service Temporarily Unavailable" in msg or "srp" in msg.lower():
                 # Apple blockt die SRP-Anmeldung (KEIN Code-/Passwortfehler - dieselben
                 # Daten funktionieren im Browser). Fast immer ein Cooldown durch zu
@@ -389,6 +467,8 @@ def op_auth_state(args: dict) -> Any:
         msg = str(e)
         if msg.startswith("no_password"):
             return {"state": "no_password"}
+        if msg.startswith("terms_required"):
+            return {"state": "terms_required", "message": msg.split(": ", 1)[-1]}
         return {"state": "error", "message": msg}
     if api.requires_2fa:
         return {"state": "need_code"}
@@ -399,7 +479,43 @@ def op_auth_state(args: dict) -> Any:
         trusted = True
     if trusted:
         _mark_trusted()
-    return {"state": "authenticated", "trusted": trusted}
+    return {"state": "authenticated", "trusted": trusted, "terms_accepted": _terms_accepted()}
+
+
+def op_accept_terms(args: dict) -> Any:
+    """Nutzer hat in der Weboberflaeche zugestimmt, dass wir Apples aktualisierte
+    iCloud-Bedingungen bestaetigen duerfen (oder widerruft das mit revoke=True).
+    Danach direkt weiter im normalen Login-Ablauf -> die Antwort ist wieder ein
+    auth_state-Ergebnis (need_code / authenticated / ...)."""
+    global _api
+    if bool(args.get("revoke")):
+        _clear_terms_accepted()
+        if _terms_env_optin():
+            # Option gewinnt ueber den Marker - sonst meldeten wir faelschlich "aus".
+            return {
+                "success": True,
+                "terms_accepted": True,
+                "message": "Add-on-Option `icloud_accept_terms` ist aktiv - dort abschalten.",
+            }
+        return {"success": True, "terms_accepted": False}
+
+    _mark_terms_accepted()
+    if _api is not None:
+        # Bestehende Session weiterverwenden: force_refresh=True ueberspringt die
+        # Token-Abkuerzung und laeuft erneut durch accountLogin - dort bestaetigt
+        # pyicloud jetzt die Bedingungen. Das spart einen zweiten SRP-Login (und
+        # damit 2FA-Push + 503-Cooldown-Risiko).
+        try:
+            setattr(_api, "_accept_terms", True)
+            _api.authenticate(force_refresh=True)
+        except Exception as e:  # noqa: BLE001
+            if _is_terms_error(e):
+                return {"error": "Apple hat die Bestaetigung der Bedingungen abgelehnt. "
+                                 "Bedingungen einmal auf icloud.com im Browser bestaetigen."}
+            # Session ist hin -> verwerfen, der naechste Aufruf baut sauber neu auf.
+            _api = None
+            return {"error": f"Anmeldung nach der Bestaetigung fehlgeschlagen: {e}"}
+    return op_auth_state({"initiate": True})
 
 
 def op_submit_2fa(args: dict) -> Any:
@@ -415,6 +531,9 @@ def op_submit_2fa(args: dict) -> Any:
         try:
             valid = api.validate_2fa_code(code)
         except Exception as e:  # noqa: BLE001
+            if _is_terms_error(e):
+                return {"error": "terms_required: Apple verlangt die Zustimmung zu den "
+                                 "aktualisierten iCloud-Nutzungsbedingungen."}
             return {"error": f"Code-Validierung fehlgeschlagen: {e}"}
         if not valid:
             return {"error": "Code ungueltig oder abgelaufen. Neuen Code anfordern und erneut versuchen."}
@@ -427,7 +546,12 @@ def op_submit_2fa(args: dict) -> Any:
         trusted = False
     if trusted:
         _mark_trusted()
-    return {"success": True, "state": "authenticated", "trusted": trusted}
+    return {
+        "success": True,
+        "state": "authenticated",
+        "trusted": trusted,
+        "terms_accepted": _terms_accepted(),
+    }
 
 
 OPS: dict[str, Callable[[dict], Any]] = {
@@ -438,6 +562,7 @@ OPS: dict[str, Callable[[dict], Any]] = {
     "delete_reminder": op_delete_reminder,
     "auth_state": op_auth_state,
     "submit_2fa": op_submit_2fa,
+    "accept_terms": op_accept_terms,
 }
 
 

@@ -9,18 +9,41 @@ Aufruf (Add-on laeuft, Optionen icloud_apple_id + icloud_apple_password gesetzt)
   docker exec -it addon_local_eink_dashboard \
       python3 /usr/lib/reminders-bridge/setup_2fa.py
 
+Verlangt Apple die Zustimmung zu aktualisierten iCloud-Nutzungsbedingungen, bricht
+das Skript ab; mit `--accept-terms` bestaetigt es sie in deinem Namen (dasselbe
+macht der Button in der Add-on-Weboberflaeche).
+
 Der Slug-Teil `local_eink_dashboard` = "local_" + slug aus config.yaml. Falls
 du einen anderen slug nutzt, den Containernamen via `docker ps` pruefen.
 
 Wiederholung nur noetig, wenn der Trust-Cookie (~1 Jahr) abgelaufen ist.
 """
 
+import inspect
 import os
 import sys
 
 from pyicloud import PyiCloudService
 
+try:
+    from pyicloud.exceptions import PyiCloudAcceptTermsException
+except ImportError:  # aeltere pyicloud-Versionen kennen sie nicht
+    class PyiCloudAcceptTermsException(Exception):  # type: ignore[no-redef]
+        """Platzhalter - wird von dieser pyicloud-Version nie geworfen."""
+
 COOKIE_DIR = os.environ.get("ICLOUD_COOKIE_DIR", "/data/pyicloud")
+TERMS_MARKER = os.path.join(COOKIE_DIR, ".terms-accepted")
+
+# Apple verlangt gelegentlich die Zustimmung zu aktualisierten iCloud-Web-
+# Bedingungen. Zustimmen nur auf ausdrueckliche Ansage: `--accept-terms` bzw.
+# ICLOUD_ACCEPT_TERMS=true (Add-on-Option `icloud_accept_terms`). Der Marker in
+# COOKIE_DIR gilt fuer bridge.py mit - genau wie beim Klick in der Weboberflaeche.
+ACCEPT_TERMS = (
+    "--accept-terms" in sys.argv
+    or (os.environ.get("ICLOUD_ACCEPT_TERMS") or "").strip().lower()
+    in ("1", "true", "yes", "on")
+    or os.path.exists(TERMS_MARKER)
+)
 
 # reminders.mjs uebergibt beim spawn ICLOUD_USERNAME; im interaktiven Setup
 # liegt die Apple-ID in ICLOUD_USERNAME (vom run-Skript exportiert). Fallback
@@ -41,7 +64,33 @@ if not username or not password:
 
 os.makedirs(COOKIE_DIR, mode=0o700, exist_ok=True)
 print(f"Melde {username} an ... (Session-Verzeichnis: {COOKIE_DIR})")
-api = PyiCloudService(username, password, cookie_directory=COOKIE_DIR)
+
+kwargs = {"cookie_directory": COOKIE_DIR}
+try:  # accept_terms gibt es erst ab pyicloud 2.6
+    if "accept_terms" in inspect.signature(PyiCloudService).parameters:
+        kwargs["accept_terms"] = ACCEPT_TERMS
+except (TypeError, ValueError):  # pragma: no cover - defensiv
+    pass
+
+try:
+    api = PyiCloudService(username, password, **kwargs)
+except PyiCloudAcceptTermsException:
+    sys.exit(
+        "Apple verlangt die Zustimmung zu aktualisierten iCloud-Nutzungsbedingungen.\n"
+        "-> Entweder in der Add-on-Weboberflaeche bestaetigen (Abschnitt iCloud-\n"
+        "   Erinnerungen), auf icloud.com im Browser bestaetigen, oder dieses\n"
+        "   Skript mit `--accept-terms` erneut ausfuehren (bestaetigt sie in\n"
+        "   deinem Namen)."
+    )
+
+if ACCEPT_TERMS and not os.path.exists(TERMS_MARKER):
+    # Zustimmung festhalten -> die kurzlebigen Bridge-Prozesse des Hintergrund-
+    # Refresh laufen nicht erneut in denselben Abbruch.
+    try:
+        with open(TERMS_MARKER, "w", encoding="utf-8") as f:
+            f.write("ok\n")
+    except OSError as e:
+        print(f"Warnung: Terms-Marker nicht schreibbar: {e}")
 
 if api.requires_2fa:
     print(

@@ -81,6 +81,11 @@ export ICLOUD_COOKIE_DIR="/data/pyicloud"        # Session + Trust persistent
 export_if_set 'icloud_reminder_lists' 'ICLOUD_REMINDER_LISTS'
 export_if_set 'reminder_refresh_min'  'REMINDER_REFRESH_MIN'
 
+# Apple verlangt gelegentlich die Zustimmung zu aktualisierten iCloud-Web-Bedingungen.
+# Mit dieser Option bestaetigt die Bridge sie automatisch; ohne sie fragt die
+# Weboberflaeche nach (Zustand "terms_required" + Button).
+export_if_set 'icloud_accept_terms'   'ICLOUD_ACCEPT_TERMS'
+
 # Apple-ID fuer die Reminder-Bridge. config.reminderAppleId = ICLOUD_APPLE_ID
 # || ICLOUD_USER -> als ICLOUD_USERNAME an die Bridge. Wir setzen ICLOUD_APPLE_ID
 # aus der Option, fallen aber auf icloud_user zurueck, damit Reminders auch

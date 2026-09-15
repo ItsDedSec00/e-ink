@@ -4,7 +4,7 @@ import { config } from './config.mjs'
 import { getEinkData } from './aggregate.mjs'
 import { renderEinkPng, renderEinkPacked } from './render.mjs'
 import { prewarmReminders, onRemindersRefreshed } from './sources/reminders.mjs'
-import { icloudAuthState, icloudSubmitCode } from './setup.mjs'
+import { icloudAuthState, icloudSubmitCode, icloudAcceptTerms } from './setup.mjs'
 import { APP_HTML } from './webui.mjs'
 import { fireButtonEvent, getWindowCandidates, readSelectedWindows, saveSelectedWindows, getWindowsOpen } from './sources/hass.mjs'
 
@@ -195,6 +195,21 @@ const server = http.createServer(async (req, res) => {
     const st = await icloudAuthState({ fresh: url.searchParams.get('fresh') === '1', initiate: url.searchParams.get('initiate') === '1' })
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(st)); return
+  }
+  // Apple-Nutzungsbedingungen bestaetigen (bzw. die Zustimmung widerrufen). Nur auf
+  // ausdruecklichen Klick in der Web-UI - wir stimmen nie von selbst zu.
+  if (path === '/setup/terms' && req.method === 'POST') {
+    if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }
+    let body = ''
+    req.on('data', c => { body += c; if (body.length > 10000) req.destroy() })
+    req.on('end', async () => {
+      let revoke = false
+      try { revoke = JSON.parse(body).revoke === true } catch { revoke = false }
+      const r = await icloudAcceptTerms({ revoke })
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      res.end(JSON.stringify(r))
+    })
+    return
   }
   if (path === '/setup/code' && req.method === 'POST') {
     if (!allowed(req, url)) { res.writeHead(403).end('forbidden'); return }

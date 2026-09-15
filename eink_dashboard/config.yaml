@@ -1,5 +1,5 @@
 name: eInk Dashboard Server
-version: "1.7.1"
+version: "1.8.0"
 slug: eink_dashboard
 description: Rendert das eInk-Framebuffer und liefert es (PNG + gepackter 4-Farb-Puffer) an ESP32-Clients im LAN
 url: https://github.com/ItsDedSec00/e-ink
@@ -50,6 +50,9 @@ options:
   window_sensors: ""
   icloud_calendars: ""
   reminder_refresh_min: 5
+  # Aktualisierte iCloud-Web-Nutzungsbedingungen automatisch bestaetigen. Standard
+  # aus: das Add-on stimmt nie ungefragt zu - es fragt in der Weboberflaeche nach.
+  icloud_accept_terms: false
 
 # --- Schema (Validierung) ---
 # Suffix ? = optional ohne Default. Secrets = password? -> maskiert in der UI.
@@ -85,4 +88,5 @@ schema:
   icloud_apple_id: "email?"
   icloud_apple_password: "password?"
   icloud_reminder_lists: "str?"
+  icloud_accept_terms: "bool?"
   reminder_refresh_min: "int(1,1440)?"
