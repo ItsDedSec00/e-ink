@@ -52,6 +52,10 @@ const batteryIcon = pct => {
     txt({ fontSize: 11, fontWeight: 700, color: c, marginLeft: 5 }, `${p}%`))
 }
 
+// Breite der linken Spalte. Der Kalender bekommt den Rest (800 - LEFT_COL_W), also
+// 541 statt frueher 515 px -> gut 5 % mehr Platz fuer die drei Tagesspalten.
+const LEFT_COL_W = 259
+
 // ── Erinnerungen: Kreis-Bullet + Titel; ueberfaellig in Rot (Bullet + Schrift) ──
 // Seit dem Wegfall des Business-Blocks fuellt die Liste die linke Spalte und darf
 // MEHRZEILIG umbrechen (vorher: eine Zeile, Rest mit … abgeschnitten). Wie viele
@@ -59,11 +63,11 @@ const batteryIcon = pct => {
 // gegen die verfuegbare Hoehe budgetieren, statt stur N Eintraege zu nehmen.
 const REM_FONT = 14
 const REM_LINE_H = 1.3                       // Zeilenabstand (auch im Style gesetzt)
-const REM_MAX_LINES = 3                      // danach kappt lineClamp mit …
+const REM_MAX_LINES = 2                      // danach kappt lineClamp mit …
 const REM_ROW_PAD = 8                        // paddingTop + paddingBottom je Eintrag
 const REM_LIST_H = 380                       // Platz unter der Ueberschrift (siehe layout)
 // Textbreite = Spaltenbreite - seitliches Padding (2x18) - Bullet (12) - Abstand (9).
-const REM_TEXT_W = 285 - 36 - 21
+const REM_TEXT_W = LEFT_COL_W - 36 - 21
 // Inter-Mischtext liegt bei gut der halben Schriftgroesse pro Zeichen; das reicht
 // als Schaetzer fuer den Umbruch (Satori bricht exakt um, wir planen nur den Platz).
 const REM_CHARS_PER_LINE = Math.max(10, Math.floor(REM_TEXT_W / (REM_FONT * 0.52)))
@@ -191,7 +195,7 @@ function layout(d) {
   return row({ style: { width: 800, height: 480, backgroundColor: PAPER, fontFamily: 'Inter', color: INK } },
     // LINKE Spalte: schmaler, damit rechts 3 Kalendertage komfortabel passen.
     // Kein Datum-Kopf (steht im Kalender), keine Business-KPIs mehr.
-    col({ style: { width: 285, borderRight: `2px solid ${INK}` } },
+    col({ style: { width: LEFT_COL_W, borderRight: `2px solid ${INK}` } },
       // Erinnerungen ganz oben (der Business-Block ist entfallen) und ueber die
       // volle Spaltenhoehe: Ueberschrift links, Akkuanzeige rechts in der Ecke.
       // Ueberlauf geklippt, damit nichts in den Fenster-Streifen rutscht.
